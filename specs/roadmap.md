@@ -1,8 +1,10 @@
 # Roadmap
 
-Sequencing strategy: **thin end-to-end slice first** (see [[mission]]). Phase 1 wires
-one minimal path through every agent so we always have a runnable, demoable system;
-later phases deepen each agent. Phases are intentionally **small**.
+Sequencing strategy: **foundational ingestion first, then a thin end-to-end slice**
+(see [[mission]]). The ingestion layer is the data backbone everything depends on, so
+it is built first (Phase 1). Phase 2 then wires every remaining agent as a minimal
+stub on top of real signals, giving a runnable, demoable system early; later phases
+deepen each agent. Phases are intentionally **small**.
 
 Each phase should end with something runnable and a visible output.
 
@@ -14,20 +16,29 @@ Each phase should end with something runnable and a visible output.
 - Define the shared **disruption-signal schema** and LangGraph **state** object.
 - **Done when:** `python` entrypoint runs an empty LangGraph with a stub node.
 
-## Phase 1 — Thin end-to-end slice (walking skeleton)
-One minimal pass through all agents using **mostly synthetic/cached data**. Each
-agent is a stub that does the simplest real thing and passes state forward.
-- Ingest a handful of canned signals → classify (rule/keyword stub) → impact-map
-  (hard-coded lookup stub) → trivial forecast → tiny simulation → templated
-  recommendation → render on Gradio.
-- **Done when:** one command runs ingest→classify→impact-map→forecast→simulate→
-  recommend→dashboard and shows a result end-to-end.
+## Phase 1 — Data ingestion layer (foundation)
+The foundational data backbone — built first because everything downstream depends on
+it. Full design in [[data-ingestion]].
+- Connector/adapter pattern + `sources.yaml` registry: RSS (`feedparser`), Open-Meteo
+  (`httpx`), cached Freightos snapshots, Kaggle dataset loader, synthetic generator.
+- Pipeline: fetch → **normalize** → **relevance gate (Stage 0 source targeting +
+  Stage 1 keyword lexicon)** → **dedupe** (exact hash) → **persist** → **emit**.
+- Persist to SQLite (system of record) + rejected-hash cache + raw snapshot files;
+  graceful fallback to cached/synthetic on any source failure.
+- Expose as a single LangGraph node emitting `new_signals` to graph state.
+- **Done when:** running ingestion yields normalized, relevance-filtered, deduped
+  signals persisted to the DB and emitted to state — from live, cached, and synthetic
+  sources, with fallback working.
 
-## Phase 2 — Real ingestion
-- Real RSS ingestion via `feedparser`; Open-Meteo weather client.
-- Cached Kaggle dataset loader; synthetic-event generator; fallback wiring.
-- Persist signals (SQLite/Parquet) against the shared schema.
-- **Done when:** dashboard shows real + synthetic signals from live and cached sources.
+## Phase 2 — Thin end-to-end slice (walking skeleton)
+With real ingestion in place, wire every **remaining** agent as a minimal stub so the
+whole chain runs end-to-end. Each stub does the simplest real thing and passes state
+forward.
+- Real signals (Phase 1) → classify (rule/keyword stub) → impact-map (hard-coded
+  lookup stub) → trivial forecast → tiny simulation → templated recommendation →
+  render on Gradio.
+- **Done when:** one command runs ingest(real)→classify→impact-map→forecast→simulate→
+  recommend→dashboard and shows a result end-to-end.
 
 ## Phase 3 — Risk classification (DistilBERT)
 - News & event analysis via OpenAI large LLM for category **classification +
@@ -105,12 +116,14 @@ project toward a production-leaning deployment and are explicitly **post-POC**.
 ---
 
 ### Sequencing notes
-- After Phase 1, phases 2–9 each **deepen one agent** of the already-connected
-  skeleton — integration risk is paid down early.
+- Ingestion (Phase 1) is the foundational data layer and is built first. The walking
+  skeleton is Phase 2; after it, phases 3–9 each **deepen one agent** of the
+  already-connected chain — integration risk is paid down early.
 - The **vector store** is introduced in Phase 4 (impact mapping) and **reused** in
   Phase 7 (mitigation) — stand it up once, index two corpora.
 - Keep the end-to-end path green after every phase; never let the skeleton rot.
-- Phases can be reordered slightly if a data dependency demands it, but the thin
-  slice (Phase 1) must come first. See [[tech-stack]] for the tools each phase uses.
+- Phases can be reordered slightly if a data dependency demands it, but ingestion
+  (Phase 1) and the thin slice (Phase 2) must come first, in that order. See
+  [[tech-stack]] for the tools each phase uses.
 - Phases 11–12 are **post-POC** and only begin once the capstone demo (Phases 0–10)
   is complete and accepted.

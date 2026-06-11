@@ -59,7 +59,7 @@ corpus:
 
 | Concern | Library / Tool |
 |---------|----------------|
-| Ingestion | `feedparser` (RSS), `requests`/`httpx` (APIs), NLP preprocessing |
+| Ingestion | `feedparser` (RSS), `httpx` (APIs), normalize + keyword relevance gate + dedupe — see [[data-ingestion]] |
 | News & event analysis | OpenAI large LLM — **classification + extraction** (no RAG; the incoming article is the context) |
 | Impact mapping | **RAG** over the internal supply-chain knowledge base — link each event to affected suppliers/lanes/facilities |
 | Weather risk | Open-Meteo API client |
@@ -82,6 +82,9 @@ To stay realistic *and* reproducible for a graded demo:
   demoable, repeatable scenarios.
 - **Graceful fallback:** every live source has a cached/synthetic fallback so a
   failed or rate-limited API never breaks a demo run.
+- **Relevance filtering:** live news is gated at ingestion (Stage 0 targeted feeds +
+  Stage 1 keyword lexicon) so only supply-chain-relevant signals are stored — the DB
+  never fills with irrelevant news. Full design in [[data-ingestion]].
 
 ## Storage & data handling
 
