@@ -69,6 +69,31 @@ The system is composed of specialized agents orchestrated with LangGraph:
 - **Ingestion:** feedparser, NLP pipelines
 - **Dashboard:** Gradio
 
+## Getting Started (Phase 0 scaffold)
+
+The repository currently contains the **Phase 0 scaffold**: an importable
+`agentic_scd` package, a thin LLM wrapper, the shared `DisruptionSignal` schema,
+a typed LangGraph state, and a single stub ingestion node wired into a runnable
+graph. It runs **fully offline** with no API key.
+
+**Prerequisites:** [`uv`](https://docs.astral.sh/uv/) (it provisions Python 3.11+
+automatically).
+
+```bash
+uv sync                       # create .venv + install from pyproject.toml + uv.lock
+uv run agentic-scd            # build & run the graph; prints a GraphState with new_signals
+#   python -m agentic_scd     # equivalent module invocation
+uv run pytest                 # smoke test
+uv run ruff check .           # lint
+uv run ruff format --check .  # formatting
+```
+
+Configuration is read from a `.env` file (see `.env.example`). With no
+`GROQ_API_KEY` set, the LLM wrapper returns a deterministic mock response so the
+scaffold never requires network access. Package layout lives under `src/agentic_scd/`
+(`config/`, `llm/`, `ingestion/`, `graph/`); later phases fill these in per
+`specs/roadmap.md`.
+
 ## Evaluation
 
 - Risk classification accuracy

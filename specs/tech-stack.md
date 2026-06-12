@@ -1,6 +1,6 @@
 # Tech Stack
 
-Choices here serve the **capstone POC** mission (see [[mission]]): breadth,
+Choices here serve the **capstone MVP** mission (see [[mission]]): breadth,
 demonstrability, and reproducibility over production hardening.
 
 ## Model strategy: tiered by task
@@ -10,13 +10,14 @@ cost.
 
 | Tier | Used for | Technology |
 |------|----------|------------|
-| **Large LLM (reasoning + generation)** | Multi-agent reasoning & orchestration, news/event analysis, mitigation recommendation generation | **OpenAI** large model (e.g. `gpt-4o` / `gpt-4.1` class) |
-| **Lightweight classifier (execution)** | High-volume, repetitive classification: disruption category, supplier-/lane-level risk scoring | **Fine-tuned DistilBERT** (`distilbert-base-uncased`) |
+| **Large LLM (reasoning + generation)** | Multi-agent reasoning & orchestration, news/event analysis, mitigation recommendation generation | **Groq `gpt-oss-120b`** (open-weights GPT-OSS 120B, served on Groq for fast, low-cost inference) |
+| **Lightweight classifier (execution)** | High-volume, repetitive classification: disruption category, supplier-/lane-level risk scoring | **Fine-tuned DistilBERT** (`distilbert-base-uncased`); low-confidence (<0.5) falls back to a Groq `gpt-oss-120b` zero-shot call |
 
-**Rationale:** the expensive large model is reserved for tasks that genuinely need
-reasoning and fluent generation. The high-frequency "execution" classification work
-runs on a cheap, fast, fine-tuned DistilBERT path — no generative SLM in the loop.
-This keeps per-run cost low while preserving reasoning quality where it matters.
+**Rationale:** the large model is reserved for tasks that genuinely need reasoning and
+fluent generation; running it on Groq keeps it fast and cheap. The high-frequency
+"execution" classification work still runs on a fine-tuned DistilBERT path — no
+generative SLM in the loop — so per-run cost stays low while reasoning quality is
+preserved where it matters.
 
 ## Where RAG fits (and where it does not)
 
@@ -35,14 +36,17 @@ corpus:
 
 ## Vector store / RAG
 
-- **POC:** **Chroma** — open-source, embeddable (runs in-process), persists to local
-  disk, no separate service to operate. Best fit for the always-demoable POC.
-  (FAISS is a lighter alternative if pure similarity search is all that's needed.)
-- **Embeddings:** OpenAI embeddings, or a local sentence-transformers model to keep
-  cost/offline-friendliness.
+- **MVP:** **Chroma** — open-source, embeddable, persists to local disk. Runs
+  **in-process** under the local `uv` workflow and as a **standalone service** under
+  `docker compose` (see Containerization below); either way it persists to a mounted
+  volume. Best fit for the always-demoable MVP. (FAISS is a lighter alternative if
+  pure similarity search is all that's needed.)
+- **Embeddings:** a local **sentence-transformers** model by default (offline /
+  cost-friendly — the LLM runs on Groq, so there is no OpenAI dependency), or a hosted
+  embeddings API if preferred.
 - **Indexed corpora:** internal supply-chain KB (suppliers/lanes/facilities) and a
   historical-disruption / mitigation-playbook corpus.
-- **Post-POC (Phase 11):** swap Chroma for a managed/cloud vector DB (e.g.
+- **Post-MVP (Phase 12):** swap Chroma for a managed/cloud vector DB (e.g.
   **Pinecone**, or pgvector on managed Postgres) when moving to the cloud.
 
 - API keys via environment variables / `.env` (never committed).
@@ -55,19 +59,44 @@ corpus:
 - Shared typed **graph state** object carries signals, classifications, forecasts,
   simulation results, and recommendations between agents.
 
+## Frontend & API layer
+
+The MVP ships **two parallel UIs over one API**, from the MVP stage (not deferred to
+production):
+
+- **FastAPI** — a thin API layer that wraps the LangGraph pipeline and exposes it to
+  the UIs, giving the React app a stable contract.
+- **Gradio** — the fast / internal dashboard, quickest to iterate as agents evolve.
+- **React + TypeScript** — the product-facing UI, built against the FastAPI API so the
+  front end the product carries forward exists from the MVP.
+
+Both UIs consume the same FastAPI endpoints over the same pipeline/state, so they stay
+consistent. Full UX in [[demo-walkthrough]].
+
+## Observability (MVP)
+
+- **Langfuse** (run locally / self-hosted) traces every LangGraph run — node
+  inputs/outputs, latency, and token/cost — for debugging and evaluation. It is small and
+  pluggable, and fits the local-first MVP.
+- Heavier **infra-metrics observability** (Prometheus / Grafana / Loki / OpenTelemetry)
+  is a Tier-2 add **on top of** the MVP's Langfuse tracing (see Post-MVP stack).
+
 ## Core libraries by agent
 
 | Concern | Library / Tool |
 |---------|----------------|
-| Ingestion | `feedparser` (RSS), `httpx` (APIs), normalize + keyword relevance gate + dedupe — see [[data-ingestion]] |
-| News & event analysis | OpenAI large LLM — **classification + extraction** (no RAG; the incoming article is the context) |
+| Ingestion | Multi-source collectors run as a **separate ingestion service** — scheduled poller (APScheduler/cron) for RSS (`feedparser`) + weather (`httpx`), a **FastAPI webhook** (supplier push; synthetic sender in the MVP), a batch loader (historical seed), and on-demand. Normalize + relevance gate + dedupe → **Postgres** (collectors write, `ingest_node` reads new rows). See [[data-ingestion]] |
+| Input guardrails | Pydantic schema + relevance / safety gate before the agents — unsafe / off-topic / malformed signals are discarded |
+| News & event analysis | **Groq `gpt-oss-120b`** — **classification + extraction** (no RAG; the incoming article is the context) |
 | Impact mapping | **RAG** over the internal supply-chain knowledge base — link each event to affected suppliers/lanes/facilities |
 | Weather risk | Open-Meteo API client |
-| Risk classification | DistilBERT (Hugging Face `transformers`) |
+| Risk classification | DistilBERT (Hugging Face `transformers`); low-confidence (<0.5) → Groq `gpt-oss-120b` zero-shot fallback |
 | Demand forecasting | Facebook **Prophet** |
 | Simulation | **SimPy** (discrete-event) + Monte Carlo (NumPy) |
-| Mitigation | OpenAI large LLM, **RAG-grounded** in historical disruptions + mitigation playbooks |
-| Dashboard | **Gradio** |
+| Mitigation | **Groq `gpt-oss-120b`**, **RAG-grounded** in historical disruptions + mitigation playbooks |
+| Output guardrails | Validate the mitigation plan (Pydantic schema · urgency · action count); retry once, then a default plan |
+| Dashboard / UI | **Gradio** (fast/internal) + **React + TypeScript** (product-facing), both served by a **FastAPI** API layer wrapping the pipeline |
+| Observability | **Langfuse** (local) — traces every LangGraph run (node I/O, latency, token/cost) |
 | Evaluation | `scikit-learn` metrics, pandas |
 
 ## Data strategy: hybrid (live + cached + synthetic)
@@ -89,8 +118,15 @@ To stay realistic *and* reproducible for a graded demo:
 ## Storage & data handling
 
 - **pandas** for in-memory tabular work.
-- Lightweight local persistence for the POC: structured files (CSV/Parquet/JSON)
-  and/or **SQLite** for signals and results — no heavyweight DB.
+- Local persistence for the MVP: a **local PostgreSQL** instance (run via
+  `docker compose` or a local install — deliberately **no cloud database**) as the
+  system of record for signals and results, plus structured snapshot files
+  (CSV/Parquet/JSON) for raw pulls and analytics. Local Postgres is production-shaped
+  (so the Tier-2 move to managed Postgres is a connection-string change) yet keeps the
+  MVP fully offline.
+- Postgres also serves as the **decoupled handoff** between the ingestion service and the
+  pipeline: collectors write incoming signals to a signals table and `ingest_node` reads
+  only the new rows, so a busy pipeline never blocks ingestion and nothing is lost.
 - A defined schema for "disruption signals" shared across agents.
 
 ## Language, runtime, tooling
@@ -100,23 +136,49 @@ To stay realistic *and* reproducible for a graded demo:
 - `python-dotenv` for config; secrets in `.env`.
 - Notebooks acceptable for experiments; agent code lives in importable modules.
 
-## Post-POC stack (Phases 11–12)
+## Containerization (MVP)
 
-These are **not** part of the capstone POC but are the intended direction once it is
+- A minimal **Postgres-only** compose lands **early (Phase 0.5)** so the database exists
+  from Phase 1 — data on a named `pgdata` volume, with `pg_dump` snapshots to a gitignored
+  repo folder (`data/backups/`). During dev you run just the DB in Docker while the app
+  stays on the local `uv` workflow.
+- **Docker + docker-compose** — an **additional** way to run the MVP alongside the
+  local `uv` workflow (which stays the dev default). The **full** stack (app + Chroma +
+  React) is layered onto that same compose at Phase 10 (see [[roadmap]]).
+- A `Dockerfile` builds the app image (LangGraph pipeline + FastAPI + Gradio); a
+  `docker-compose.yml` orchestrates it as a **multi-service** stack — the app plus a
+  standalone **Chroma** service and a **PostgreSQL** service (data on a named volume),
+  with the **React** app served as its own container.
+- **Volumes** persist the Postgres data, raw snapshots, and the Chroma store across
+  restarts; the Postgres connection string and secrets are passed via env / `.env` and
+  never baked into images. Everything stays local — no cloud services required.
+- `docker compose up` reproduces the full end-to-end demo in containers — useful for
+  reviewers and as the on-ramp to the post-MVP cloud deployment.
+
+## Post-MVP stack (Phases 12–13)
+
+These are **not** part of the capstone MVP but are the intended direction once it is
 accepted (see [[roadmap]]):
 
-- **Cloud deployment (Phase 11):** Docker containers; a cloud host (AWS / GCP /
-  Azure); managed persistence (e.g. managed Postgres) replacing local SQLite;
-  secrets manager; basic CI/CD, logging, and health checks; scheduled/triggered
-  ingestion.
-- **Production frontend (Phase 12):** a **React** single-page app (with a component
-  library / design system) replacing Gradio, talking to the agent pipeline through a
-  **FastAPI** backend API. Gradio is retired or kept only as an internal debug UI.
+- **Cloud deployment (Phase 12):** build on the Phase 10 Docker setup — harden images
+  and run on a cloud host (AWS / GCP / Azure); migrate the **local PostgreSQL** to
+  **managed/cloud Postgres** and Chroma to a managed vector DB; add a secrets manager,
+  container registry / orchestration (Kubernetes), an Nginx gateway, Redis, and an
+  **infra-metrics observability stack** (Prometheus / Grafana / Loki / OpenTelemetry) on
+  top of the MVP's Langfuse tracing; basic CI/CD, logging and health checks.
+- **Production frontend (Phase 13):** harden the **React** app (already built in the
+  MVP) into the **primary** UI with a component library / design system; the
+  **FastAPI** backend (also from the MVP) is hardened behind the Nginx gateway. Gradio
+  is retired or kept only as an internal debug UI.
+- **Priority/severity routing (optional differentiator):** add a conditional branch that
+  prioritizes high-severity events (without skipping forecasting) — the MVP pipeline is
+  linear.
 
 ## Still deferred (beyond current roadmap)
 
-- Managed/large-scale vector DB, message queues, full container orchestration (e.g.
-  Kubernetes), multi-tenant auth, and a full observability stack. (A lightweight
-  local vector store — Chroma — *is* in the POC; only the at-scale managed version
-  is deferred.) Revisit only if the project grows past the post-POC pilot (see
-  [[mission]] out-of-scope list).
+- Message queues (RabbitMQ / Kafka) and multi-tenant auth (JWT / RBAC) — added only if
+  scale or multi-tenancy demands them. (Kubernetes, the Nginx gateway, Redis, and the
+  observability stack now land in Phase 12; a lightweight local vector store — Chroma —
+  *is* in the MVP, with only the at-scale managed version deferred to Phase 12.)
+  Revisit only if the project grows past the post-MVP pilot (see [[mission]]
+  out-of-scope list).

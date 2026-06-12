@@ -15,32 +15,53 @@ from **reactive** to **proactive** risk management by turning noisy external
 signals (news, weather, freight indices, logistics data) into ranked risks,
 quantified impact estimates, and actionable mitigation options.
 
-## Scope: Capstone Demo / Proof of Concept
+## Scope: Capstone Demo / Minimum Viable Product (MVP)
 
-This is a **capstone POC**, not a production system. That choice drives every
+This is a **capstone MVP**, not a production system. That choice drives every
 trade-off below.
 
 **Optimize for:**
-- **Breadth** — a working end-to-end path through all nine agents that proves the
+- **Breadth** — a working end-to-end path through all seven agents that proves the
   multi-agent concept.
 - **Demonstrability** — every run produces a clear, reproducible story a reviewer
   can follow on a dashboard.
 - **Reproducibility** — demos must not break because an external API is down or
   rate-limited (see [[tech-stack]] data strategy).
 
-**Explicitly out of scope for the POC (Phases 0–10):**
+**In scope for the MVP (infrastructure):**
+- **Local PostgreSQL** — a local Postgres instance (via `docker compose` or a local
+  install, **never a cloud database**) is the system of record, so the MVP is
+  production-shaped yet runs fully offline (see [[tech-stack]]).
+- **Continuous multi-source ingestion** — a **separate ingestion service** (scheduled
+  poller + supplier webhook + batch loader + on-demand) writes to a Postgres handoff, so
+  the system monitors continuously rather than only on demand (see [[data-ingestion]]).
+- **Guardrails** — input and output guardrail gates bracket the pipeline: drop
+  unsafe/irrelevant signals on the way in, and validate recommendations before they
+  reach the dashboard.
+- **Parallel React UI + FastAPI** — alongside the Gradio dashboard, a React app
+  (served by a FastAPI layer that wraps the pipeline) is built from the MVP stage, so
+  the product-facing front end exists early (see [[tech-stack]], [[demo-walkthrough]]).
+- **Local observability** — a local **Langfuse** service traces every run (node
+  inputs/outputs, latency, token/cost) for debugging and evaluation.
+- **Local containerization** — a Postgres dev compose lands early (Phase 0.5) so the DB
+  exists from Phase 1; the full stack is runnable via `docker compose` (Phase 10) as an
+  additional path alongside the local `uv` workflow (see [[roadmap]]).
+
+**Explicitly out of scope for the MVP (Phases 0–11):**
 - Production hardening: HA, autoscaling, multi-tenant security, SLAs.
 - Live trading/ERP integrations or write-back into real procurement systems.
 - Real-money decisions — output is decision *support*, not automated action.
 
-**Planned post-POC (Phases 11–12, see [[roadmap]]):**
-- **Cloud deployment** — containerize and host the backend + dashboard with managed
-  persistence and CI/CD.
-- **Production frontend** — replace the Gradio dashboard with a dedicated React app
-  backed by a service API.
+**Planned post-MVP (Phases 12–13, see [[roadmap]]):**
+- **Cloud deployment** — host the containerized backend + dashboards on a managed
+  cloud platform, migrating the local Postgres to managed persistence, plus a secrets
+  manager and CI/CD.
+- **Production frontend** — harden the React app (already built in the MVP) into the
+  primary UI and retire the Gradio dashboard, or keep it only as an internal debug
+  surface.
 
-These post-POC phases begin only once the capstone demo is complete and accepted;
-they shift the project from "always-demoable POC" toward a production-leaning pilot.
+These post-MVP phases begin only once the capstone demo is complete and accepted;
+they shift the project from "always-demoable MVP" toward a production-leaning pilot.
 
 ## Primary users
 
@@ -52,9 +73,10 @@ they shift the project from "always-demoable POC" toward a production-leaning pi
 
 ## Success criteria
 
-A successful POC can, in a single demo run:
+A successful MVP can, in a single demo run:
 
-1. Ingest disruption signals from a mix of live and cached/synthetic sources.
+1. Ingest disruption signals from a mix of live, cached, and synthetic sources via
+   scheduled, webhook, and on-demand triggers.
 2. Classify them into risk categories with supplier-/lane-level risk scores.
 3. Map each event to the affected parts of *our* network (suppliers, lanes,
    facilities) by retrieving from an internal supply-chain knowledge base.
@@ -71,8 +93,9 @@ A successful POC can, in a single demo run:
 
 - **Always demoable** — keep a runnable end-to-end slice working at all times
   (see [[roadmap]]).
-- **Right model for the job** — a large LLM reasons and orchestrates; lightweight
-  fine-tuned classifiers handle high-volume execution work (see [[tech-stack]]).
+- **Right model for the job** — a large LLM (**Groq `gpt-oss-120b`**) reasons and
+  orchestrates; lightweight fine-tuned classifiers handle high-volume execution work
+  (see [[tech-stack]]).
 - **Graceful degradation** — if a live source fails, fall back to cached/synthetic
   data rather than breaking the run.
 - **Explainable over clever** — favor outputs an analyst can trust and justify.
