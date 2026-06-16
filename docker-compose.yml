@@ -1,0 +1,31 @@
+# Phase 0.5 — Dev data services. Brings up ONLY a local Postgres for development;
+# the app itself keeps running on the local `uv` workflow and connects over
+# DATABASE_URL. Values are read from the project-root `.env` (Compose loads it
+# automatically). No tables/schema here — that lands in Phase 1.
+#
+#   docker compose up -d postgres   # start just the database
+#   docker compose ps               # postgres should report "healthy"
+#   docker compose down             # stop; data persists on the pgdata volume
+#   docker compose down -v          # also drop the volume (wipes the data)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic_scd_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:

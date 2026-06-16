@@ -16,7 +16,7 @@ Each phase should end with something runnable and a visible output.
 - Define the shared **disruption-signal schema** and LangGraph **state** object.
 - **Done when:** `python` entrypoint runs an empty LangGraph with a stub node.
 
-## Phase 0.5 — Dev data services (Docker Compose for Postgres)
+## Phase 0.5 — Dev data services (Docker Compose for Postgres) ✅ COMPLETE
 Postgres is needed from Phase 1 onward (ingestion persists to it), so stand up a
 throwaway local DB early — no host install required.
 - A root `docker-compose.yml` with a **`postgres`** service (healthcheck; DB name / user /

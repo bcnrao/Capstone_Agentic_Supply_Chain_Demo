@@ -27,9 +27,7 @@ def test_graph_run_emits_signals() -> None:
 def test_llm_mock_offline() -> None:
     # Force mock mode via explicit settings so the test is hermetic: no network
     # call and no dependence on whether a GROQ_API_KEY is configured in .env.
-    mock_settings = Settings(
-        groq_api_key=None, groq_model="unused", use_mock_llm=True
-    )
+    mock_settings = Settings(groq_api_key=None, groq_model="unused", use_mock_llm=True)
     first = completion("hello supply chain", settings=mock_settings)
     second = completion("hello supply chain", settings=mock_settings)
     assert first.startswith("[MOCK-LLM:")

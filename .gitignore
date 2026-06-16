@@ -19,6 +19,10 @@ venv/
 *.sqlite3
 *.db
 
+# Postgres backup snapshots (keep the directory, ignore the dumps)
+/data/backups/*
+!/data/backups/.gitkeep
+
 # Tooling caches
 .pytest_cache/
 .ruff_cache/

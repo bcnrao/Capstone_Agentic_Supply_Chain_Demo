@@ -25,6 +25,29 @@ def env_flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true"}
 
 
+def _build_database_url() -> str | None:
+    """Resolve the Postgres connection string from the environment.
+
+    Prefer an explicit ``DATABASE_URL``; otherwise assemble one from the
+    ``POSTGRES_*`` parts when the required pieces are present. Returns ``None``
+    when nothing is configured, so the app degrades gracefully and stays
+    offline-runnable (the DB helper reports a clear status instead of crashing).
+    """
+    explicit = os.getenv("DATABASE_URL")
+    if explicit:
+        return explicit
+
+    db = os.getenv("POSTGRES_DB")
+    user = os.getenv("POSTGRES_USER")
+    password = os.getenv("POSTGRES_PASSWORD")
+    if not (db and user and password):
+        return None
+
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+
+
 @dataclass(frozen=True)
 class Settings:
     """Resolved runtime configuration."""
@@ -32,6 +55,7 @@ class Settings:
     groq_api_key: str | None
     groq_model: str
     use_mock_llm: bool
+    database_url: str | None = None
 
     @property
     def llm_is_mock(self) -> bool:
@@ -54,4 +78,5 @@ def get_settings() -> Settings:
         groq_api_key=os.getenv("GROQ_API_KEY") or None,
         groq_model=os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL),
         use_mock_llm=env_flag("USE_MOCK_LLM", default=False),
+        database_url=_build_database_url(),
     )

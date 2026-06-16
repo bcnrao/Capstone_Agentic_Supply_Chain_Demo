@@ -91,8 +91,44 @@ uv run ruff format --check .  # formatting
 Configuration is read from a `.env` file (see `.env.example`). With no
 `GROQ_API_KEY` set, the LLM wrapper returns a deterministic mock response so the
 scaffold never requires network access. Package layout lives under `src/agentic_scd/`
-(`config/`, `llm/`, `ingestion/`, `graph/`); later phases fill these in per
+(`config/`, `llm/`, `ingestion/`, `graph/`, `db/`); later phases fill these in per
 `specs/roadmap.md`.
+
+## Dev database (Phase 0.5)
+
+A throwaway **local Postgres** runs via Docker Compose so a database exists from
+Phase 1 onward. The app still runs on the local `uv` workflow and connects over
+`DATABASE_URL` — Docker here runs **only** the database (no tables/schema yet;
+those land in Phase 1). **Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+running.**
+
+```bash
+docker compose up -d postgres     # start just the DB (postgres:16-alpine)
+docker compose ps                 # postgres should report "healthy"
+```
+
+The connection settings come from `.env` (`POSTGRES_*` feed the container;
+`DATABASE_URL` is what the app uses). Verify connectivity:
+
+```bash
+uv run python -c "from agentic_scd.db import ping; print(ping())"
+#   PingResult(ok=True, detail='SELECT 1 ok')  when the DB is up
+```
+
+If no database is reachable, `ping()` returns `PingResult(ok=False, ...)` with a
+clear message (never a crash), so the app stays offline-runnable and the test
+suite still passes.
+
+**Backup / restore** (cross-platform, via `uv run`). Dumps are timestamped SQL
+files written to `data/backups/` (git-ignored):
+
+```bash
+uv run python scripts/db_dump.py                       # -> data/backups/pgdump-<ts>.sql
+uv run python scripts/db_restore.py data/backups/<snapshot>.sql
+```
+
+Data persists on the named `pgdata` volume across `docker compose down` → `up`;
+`docker compose down -v` also drops the volume (wiping the data).
 
 ## Evaluation
 
