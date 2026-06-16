@@ -25,7 +25,7 @@ def env_flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true"}
 
 
-def _build_database_url() -> str | None:
+def build_database_url() -> str | None:
     """Resolve the Postgres connection string from the environment.
 
     Prefer an explicit ``DATABASE_URL``; otherwise assemble one from the
@@ -78,5 +78,5 @@ def get_settings() -> Settings:
         groq_api_key=os.getenv("GROQ_API_KEY") or None,
         groq_model=os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL),
         use_mock_llm=env_flag("USE_MOCK_LLM", default=False),
-        database_url=_build_database_url(),
+        database_url=build_database_url(),
     )

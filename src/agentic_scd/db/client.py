@@ -14,6 +14,10 @@ import psycopg
 
 from agentic_scd.config import Settings, get_settings
 
+# Bound connection attempts so an unreachable DB fails fast instead of hanging on a
+# dropped SYN (keeps ping() and the DB-skip tests prompt). libpq clamps this to >= 2s.
+CONNECT_TIMEOUT_SECONDS = 5
+
 
 class DatabaseNotConfiguredError(RuntimeError):
     """Raised by ``connect`` when no ``database_url`` is configured."""
@@ -35,8 +39,16 @@ class PingResult:
         return self.ok
 
 
-def connect(settings: Settings | None = None) -> psycopg.Connection:
+def connect(
+    settings: Settings | None = None, *, connect_timeout: int = CONNECT_TIMEOUT_SECONDS
+) -> psycopg.Connection:
     """Open a new Postgres connection from ``settings.database_url``.
+
+    A bounded ``connect_timeout`` keeps the offline contract real: when no server is
+    listening, some networks drop the SYN and the OS retransmits for ~20s before
+    giving up. The timeout makes an unreachable DB fail fast (raising
+    ``OperationalError``) so ``ping`` and the DB-skip tests degrade promptly instead
+    of hanging.
 
     Raises:
         DatabaseNotConfiguredError: if no ``database_url`` is configured.
@@ -48,7 +60,7 @@ def connect(settings: Settings | None = None) -> psycopg.Connection:
             "No DATABASE_URL configured (set DATABASE_URL or the POSTGRES_* "
             "vars in .env); see .env.example."
         )
-    return psycopg.connect(settings.database_url)
+    return psycopg.connect(settings.database_url, connect_timeout=connect_timeout)
 
 
 def ping(settings: Settings | None = None) -> PingResult:

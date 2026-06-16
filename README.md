@@ -130,6 +130,66 @@ uv run python scripts/db_restore.py data/backups/<snapshot>.sql
 Data persists on the named `pgdata` volume across `docker compose down` → `up`;
 `docker compose down -v` also drops the volume (wiping the data).
 
+## Data ingestion (Phase 1)
+
+The ingestion layer turns messy external data into clean, deduplicated, **relevant**
+disruption signals. Collectors run **on-demand** (the scheduled poller and webhook are
+Phase 1b) through one pipeline: **fetch → normalize → relevance-gate → dedupe →
+persist**. The graph then reads what was persisted.
+
+```bash
+docker compose up -d postgres     # Phase 0.5 DB (optional — see offline note below)
+uv run agentic-scd-collect        # run every enabled source once through the pipeline
+```
+
+The collector prints a per-source summary (fetched / kept / dropped / persisted /
+live-vs-fallback), e.g.:
+
+```
+source                fetched   kept  dropped  persisted       path
+supplychain_rss           510    469       41        469       live
+open_meteo                  3      3        0          3       live
+synthetic                   3      3        0          3       live
+```
+
+**Sources** are toggled by config in `sources.yaml` (not code): query-scoped RSS
+(`feedparser`), Open-Meteo weather (`httpx`), and an always-available synthetic
+generator. Each connector's `fetch()` is wrapped so any failure (network / empty)
+degrades to a cached/synthetic `fallback()` instead of crashing — the path taken is
+logged.
+
+**Relevance gate** (Stage 0 + Stage 1 only): Stage 0 targets supply-chain sources;
+Stage 1 keeps a signal only if its normalized text hits the disruption lexicon in
+`lexicon.yaml` (strike, embargo, typhoon, tariff, …). It favors recall and logs the
+drop rate; re-tune the lexicon and re-run freely.
+
+**What persists where:**
+- **Accepted signals** (full record + `raw_payload`, `status='new'`) → Postgres
+  `signals` table (the system of record and the decoupled handoff).
+- **Rejected items** → only their `dedup_hash` in `seen_rejected` (so the same junk
+  isn't re-evaluated every run).
+- **Raw pulls** → timestamped JSON **snapshot files** in `data/snapshots/`
+  (gitignored), *not* the DB — the audit/replay path. Offline fallback fixtures live
+  under `data/fallback/` (committed).
+
+Dedupe is **exact SHA-256** over the normalized title+body, so re-running the collector
+never creates duplicate rows.
+
+**Into the graph.** `uv run agentic-scd` runs the pipeline: `ingest_node` drains only
+`status='new'` rows (flipping them to `processing`, so old news is never reprocessed),
+then an **input guardrail** node discards anything off-topic / unsafe / schema-invalid
+before downstream agents.
+
+**Offline contract.** Everything runs with **no Docker and no network**: the synthetic
+connector and cached fallbacks still yield signals, and with no DB the collector reports
+in-memory only while `ingest_node` returns an empty batch — never a crash.
+
+```bash
+uv run agentic-scd-collect        # synthetic + cached fallbacks, no crash
+uv run agentic-scd                # graph runs end-to-end
+uv run pytest                     # green; DB-touching tests skip cleanly when no DB
+```
+
 ## Evaluation
 
 - Risk classification accuracy

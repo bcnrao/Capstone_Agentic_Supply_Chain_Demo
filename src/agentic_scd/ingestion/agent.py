@@ -1,41 +1,96 @@
 """The ingestion LangGraph node.
 
-Phase 0 ships a **stub**: it emits a single synthetic ``DisruptionSignal`` so the
-graph's emit/merge mechanism is exercised end-to-end (the node returns a partial
-state update that LangGraph merges into the ``new_signals`` channel). Phase 1
-replaces the body with the real fetch -> normalize -> gate -> dedupe -> persist ->
-emit pipeline (see specs/data-ingestion.md) behind this same node signature.
+Collectors run **outside** the graph and persist accepted signals to Postgres (see
+``ingestion/collect.py``). This node is the read side of the decoupled handoff:
+``ingestion_node`` drains only the **new** rows (``status='new'`` -> ``processing``)
+and emits them as a partial state update LangGraph merges into the ``new_signals``
+channel. Delta-only — a second run with no new rows yields an empty batch.
+
+Graceful offline contract: with no DB configured/reachable the node returns an empty
+batch instead of crashing, so the existing ``__main__`` graph run still works.
 """
 
-import uuid
-from datetime import UTC, datetime
+import logging
+from typing import TYPE_CHECKING
 
-from agentic_scd.graph.state import GraphState
-from agentic_scd.ingestion.schema import DisruptionSignal
+import psycopg
+
+from agentic_scd.db import DatabaseNotConfiguredError, connect, init_db
+from agentic_scd.ingestion.schema import DisruptionSignal, Location
+
+if TYPE_CHECKING:
+    from agentic_scd.graph.state import GraphState
+
+logger = logging.getLogger(__name__)
+
+SELECT_NEW = """
+SELECT signal_id, dedup_hash, source, source_type, source_reliability,
+       fetched_at, event_time, title, raw_text, url,
+       location, severity_hint, schema_version, raw_payload
+FROM signals
+WHERE status = 'new'
+ORDER BY created_at
+"""
+
+COLUMNS = (
+    "signal_id",
+    "dedup_hash",
+    "source",
+    "source_type",
+    "source_reliability",
+    "fetched_at",
+    "event_time",
+    "title",
+    "raw_text",
+    "url",
+    "location",
+    "severity_hint",
+    "schema_version",
+    "raw_payload",
+)
 
 
-def synthetic_signal() -> DisruptionSignal:
-    """A deterministic-shape placeholder signal proving the channel works."""
-    now = datetime.now(UTC)
-    return DisruptionSignal(
-        signal_id=str(uuid.uuid4()),
-        source="synthetic_stub",
-        source_type="SYNTHETIC",
-        fetched_at=now,
-        event_time=now,
-        title="Placeholder disruption signal (Phase 0 stub)",
-        raw_text=(
-            "Scaffolding stub signal emitted by the ingestion node to prove the "
-            "LangGraph emit/merge mechanism. Replaced by real connectors in Phase 1."
-        ),
-        url=None,
-    )
+def row_to_signal(row: tuple) -> DisruptionSignal:
+    data = dict(zip(COLUMNS, row, strict=True))
+    location = data.pop("location")
+    data["location"] = Location(**location) if location else None
+    return DisruptionSignal(**data)
 
 
-def ingestion_node(state: GraphState) -> dict:
+def read_new_signals(conn) -> list[DisruptionSignal]:  # noqa: ANN001 — psycopg conn
+    """Select ``status='new'`` rows, mark them ``processing``, return them.
+
+    Single transaction: the rows are claimed (status flipped) as they are read, so a
+    later run never reprocesses them (delta-only handoff).
+    """
+    with conn.cursor() as cur:
+        cur.execute(SELECT_NEW)
+        rows = cur.fetchall()
+        signals = [row_to_signal(row) for row in rows]
+        if signals:
+            cur.execute(
+                "UPDATE signals SET status = 'processing' WHERE signal_id = ANY(%s)",
+                ([s.signal_id for s in signals],),
+            )
+    conn.commit()
+    return signals
+
+
+def ingestion_node(state: "GraphState") -> dict:
     """Emit this run's batch of new signals as a partial state update.
 
-    Returns a dict (not the whole state) so LangGraph merges it into the
-    ``new_signals`` channel via that channel's reducer.
+    Returns ``{"new_signals": [...]}`` (overwrite reducer). Degrades to an empty batch
+    when no DB is configured/reachable so the graph stays offline-runnable.
     """
-    return {"new_signals": [synthetic_signal()]}
+    try:
+        # Idempotently ensure the schema exists so the graph runs standalone on a
+        # fresh DB (before the collector has ever run); a no-op once created.
+        init_db()
+        with connect() as conn:
+            signals = read_new_signals(conn)
+    except (DatabaseNotConfiguredError, psycopg.OperationalError) as exc:
+        logger.warning(
+            "ingestion_node: no DB available (%s); emitting empty batch", exc
+        )
+        return {"new_signals": []}
+    return {"new_signals": signals}

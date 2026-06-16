@@ -23,6 +23,10 @@ venv/
 /data/backups/*
 !/data/backups/.gitkeep
 
+# Ingestion raw-pull snapshots (keep the directory, ignore the live pulls)
+/data/snapshots/*
+!/data/snapshots/.gitkeep
+
 # Tooling caches
 .pytest_cache/
 .ruff_cache/

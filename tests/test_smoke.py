@@ -12,15 +12,16 @@ def test_package_imports() -> None:
     assert agentic_scd.__version__
 
 
-def test_graph_run_emits_signals() -> None:
+def test_graph_run_offline() -> None:
+    # Phase 1: ingest_node reads new rows from Postgres. With no DB reachable it
+    # degrades to an empty batch and the graph still runs end-to-end (no crash).
     state = run()
     assert "new_signals" in state
     signals = state["new_signals"]
     assert isinstance(signals, list)
-    assert len(signals) >= 1
+    # Whatever survives the guardrail is a valid, ingestion-only DisruptionSignal.
     assert all(isinstance(s, DisruptionSignal) for s in signals)
     assert all(s.schema_version == SCHEMA_VERSION for s in signals)
-    # Phase 3/4 fields are nullable and unset at ingestion.
     assert all(s.category is None and s.affected_entities is None for s in signals)
 
 

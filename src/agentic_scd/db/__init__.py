@@ -6,3 +6,4 @@ from agentic_scd.db.client import (
     connect,
     ping,
 )
+from agentic_scd.db.init_db import init_db, schema_sql
