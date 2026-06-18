@@ -34,25 +34,39 @@ throwaway local DB early — no host install required.
   Postgres the app connects to, and the dump/restore scripts round-trip a snapshot to
   `data/backups/`.
 
-## Phase 1 — Data ingestion layer (foundation)
+## Phase 1a — Data ingestion layer: core slice ✅ COMPLETE
 The foundational data backbone — built first because everything downstream depends on
-it. It runs against the Postgres stood up in Phase 0.5. Full design in [[data-ingestion]].
-- Connector/adapter pattern + `sources.yaml` registry, run as a **separate ingestion
-  service** with several collectors: a scheduled poller (APScheduler/cron) for RSS
-  (`feedparser`) + Open-Meteo (`httpx`), a **FastAPI webhook** (supplier push; synthetic
-  sender in the MVP), a batch loader (cached Freightos / Kaggle historical seed), a
-  synthetic generator, and on-demand.
+it. It runs against the Postgres stood up in Phase 0.5. Full design in [[data-ingestion]];
+scope/decisions in specs/2026-06-16-data-ingestion.
+- Connector/adapter pattern + `sources.yaml` registry (sources toggle by config, not
+  code): live **RSS** (`feedparser`, query-scoped), **Open-Meteo** (`httpx`), and a
+  **synthetic** generator; each `fetch()` degrades to a cached/synthetic `fallback()` on
+  any failure, with the path taken logged.
 - Pipeline: fetch → **normalize** → **relevance gate (Stage 0 source targeting +
   Stage 1 keyword lexicon)** → **dedupe** (exact hash) → **persist**.
-- Persist to local PostgreSQL — the **decoupled handoff**: collectors write to a signals
-  table and `ingest_node` reads only the new rows (status flag / watermark), so a busy
-  pipeline never blocks ingestion. Rejected-hash cache + raw snapshot files; graceful
-  fallback to cached/synthetic on any source failure.
+- Persist to local PostgreSQL — the **decoupled handoff**: collectors write to a `signals`
+  table and `ingest_node` reads only the new rows (`status` flag), so a busy pipeline
+  never blocks ingestion. Rejected-hash cache + raw snapshot files; idempotent schema init.
 - First pipeline node is the **input guardrail** (relevance · Pydantic schema · safety →
   discard unsafe / off-topic). `ingest_node` then emits `new_signals` to graph state.
-- **Done when:** the ingestion service yields normalized, relevance-filtered, deduped
-  signals persisted to Postgres and read into state — from scheduled, webhook, batch, and
-  synthetic sources, with fallback and the input guardrail working.
+- Collectors run **on-demand** this slice (`uv run agentic-scd-collect`).
+- **Done when:** the on-demand collector yields normalized, relevance-filtered, deduped
+  signals persisted to Postgres and read into state, with fallback and the input guardrail
+  working. ✅
+
+## Phase 1b — Data ingestion: always-on triggers & batch (pending)
+Adds the separate-service trigger machinery deferred from 1a, on the same DB handoff so
+1b only adds trigger plumbing — no rework of the core pipeline.
+- **Scheduled poller** (APScheduler/cron) polling RSS + Open-Meteo every N minutes
+  (continuous monitoring even with nobody at the dashboard).
+- **FastAPI webhook** for real-time supplier push events (synthetic sender in the MVP;
+  HMAC signature auth is post-MVP).
+- **Batch loaders**: cached **Freightos Baltic Index** snapshots + **Kaggle
+  SupplyChainNet** historical seed (baselines + KB history).
+- Retention/TTL on the seen-rejected cache and accepted signals; optional Parquet export.
+- **Done when:** the ingestion service runs continuously (scheduled), accepts webhook
+  pushes, and seeds history via the batch loaders — all draining into the same `signals`
+  table the pipeline reads.
 
 ## Phase 2 — Thin end-to-end slice (walking skeleton)
 With real ingestion in place, wire every **remaining** agent as a minimal stub so the
