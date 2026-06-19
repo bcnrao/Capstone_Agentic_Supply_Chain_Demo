@@ -31,6 +31,13 @@ SCENARIOS: list[dict[str, str]] = [
             "concerns and a product recall compounding the shortage risk."
         ),
     },
+    {
+        "title": "Earthquake damages key supplier facilities, halting production",
+        "body": (
+            "An earthquake has damaged key supplier facilities, leading to a temporary "
+            "halt in production and potential supply chain disruptions."
+        ),
+    },
 ]
 
 

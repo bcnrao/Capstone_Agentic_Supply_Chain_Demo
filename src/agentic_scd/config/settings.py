@@ -12,6 +12,12 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 
+# Phase 1b ingestion-service defaults (see .env.example).
+DEFAULT_POLL_INTERVAL_MINUTES = 10
+DEFAULT_INGEST_HOST = "127.0.0.1"
+DEFAULT_INGEST_PORT = 8001
+DEFAULT_WEBHOOK_RELIABILITY = 0.6
+
 # Default large reasoning/generation model — Groq GPT-OSS-120B (see
 # specs/tech-stack.md). ``openai/gpt-oss-120b`` is the Groq API model id.
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
@@ -23,6 +29,28 @@ def env_flag(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true"}
+
+
+def env_int(name: str, default: int) -> int:
+    """Read an int env var; fall back to ``default`` if unset/invalid."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
+
+def env_float(name: str, default: float) -> float:
+    """Read a float env var; fall back to ``default`` if unset/invalid."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw.strip())
+    except ValueError:
+        return default
 
 
 def build_database_url() -> str | None:
@@ -57,6 +85,13 @@ class Settings:
     use_mock_llm: bool
     database_url: str | None = None
 
+    # --- Always-on ingestion service (Phase 1b) ---------------------------
+    ingest_poll_interval_minutes: int = DEFAULT_POLL_INTERVAL_MINUTES
+    ingest_scheduler_enabled: bool = True
+    ingest_host: str = DEFAULT_INGEST_HOST
+    ingest_port: int = DEFAULT_INGEST_PORT
+    webhook_source_reliability: float = DEFAULT_WEBHOOK_RELIABILITY
+
     @property
     def llm_is_mock(self) -> bool:
         """True when no real provider call should be made.
@@ -79,4 +114,13 @@ def get_settings() -> Settings:
         groq_model=os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL),
         use_mock_llm=env_flag("USE_MOCK_LLM", default=False),
         database_url=build_database_url(),
+        ingest_poll_interval_minutes=env_int(
+            "INGEST_POLL_INTERVAL_MINUTES", DEFAULT_POLL_INTERVAL_MINUTES
+        ),
+        ingest_scheduler_enabled=env_flag("INGEST_SCHEDULER_ENABLED", default=True),
+        ingest_host=os.getenv("INGEST_HOST", DEFAULT_INGEST_HOST),
+        ingest_port=env_int("INGEST_PORT", DEFAULT_INGEST_PORT),
+        webhook_source_reliability=env_float(
+            "WEBHOOK_SOURCE_RELIABILITY", DEFAULT_WEBHOOK_RELIABILITY
+        ),
     )

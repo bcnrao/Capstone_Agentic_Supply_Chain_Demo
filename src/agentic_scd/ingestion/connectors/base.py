@@ -22,6 +22,7 @@ class SourceType:
     FREIGHT_INDEX = "FREIGHT_INDEX"
     DATASET = "DATASET"
     SYNTHETIC = "SYNTHETIC"
+    WEBHOOK = "WEBHOOK"
 
 
 class RawItem(BaseModel):

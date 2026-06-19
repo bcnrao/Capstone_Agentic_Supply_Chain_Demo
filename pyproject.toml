@@ -13,11 +13,15 @@ dependencies = [
     "feedparser>=6.0.12",
     "httpx>=0.28.1",
     "pyyaml>=6.0.3",
+    "fastapi>=0.137.2",
+    "uvicorn>=0.49.0",
+    "apscheduler>=3.11.2",
 ]
 
 [project.scripts]
 agentic-scd = "agentic_scd.__main__:main"
 agentic-scd-collect = "agentic_scd.ingestion.collect:main"
+agentic-scd-ingest = "agentic_scd.ingestion.service:main"
 
 [dependency-groups]
 dev = [

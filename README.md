@@ -190,6 +190,42 @@ uv run agentic-scd                # graph runs end-to-end
 uv run pytest                     # green; DB-touching tests skip cleanly when no DB
 ```
 
+## Always-on ingestion service (Phase 1b)
+
+Phase 1a runs collectors **on-demand**. Phase 1b wraps that same pipeline in two
+**always-on triggers** — a scheduled poller and a supplier webhook — running as one
+FastAPI service so the system monitors continuously instead of only when invoked. Both
+triggers write through the *same* normalize → gate → dedupe → persist path into the
+*same* `signals` table the graph drains; the batch loaders and retention/TTL are the
+remaining Phase 1b follow-up.
+
+```bash
+docker compose up -d postgres     # optional — see the offline note below
+uv run agentic-scd-ingest         # start the service (webhook + in-process scheduler)
+```
+
+- **Scheduled poller** — an in-process APScheduler job runs the full collector
+  (`collect()`) every `INGEST_POLL_INTERVAL_MINUTES` (default 10), overlap-safe
+  (`max_instances=1`). Disable it with `INGEST_SCHEDULER_ENABLED=false` to run
+  webhook-only.
+- **Supplier webhook** — `POST /signals` accepts a pushed disruption event, normalizes it
+  (`source=supplier_webhook`), and runs it through gate → dedupe → persist, returning a
+  JSON summary. No signature auth in the MVP. Drive it with the synthetic sender:
+
+```bash
+uv run python scripts/send_synthetic_event.py     # POSTs synthetic events to /signals
+curl -s localhost:8001/health                     # {status, scheduler_running, db_reachable}
+```
+
+Signals from **either** trigger drain the same way — `uv run agentic-scd` runs the graph,
+whose `ingest_node` reads the new rows behind the input guardrail. Config lives in
+`.env` (`INGEST_*`, `WEBHOOK_SOURCE_RELIABILITY`); see `.env.example`.
+
+**Offline contract.** With **no DB**, the service still starts, the poller ticks
+in-memory, and `POST /signals` returns HTTP 200 with `persisted=0` (never a 5xx); with
+**no network**, the poller falls back to synthetic/cached data. `uv run pytest` stays
+green offline (the webhook → persist round-trip test skips cleanly with no DB).
+
 ## Evaluation
 
 - Risk classification accuracy

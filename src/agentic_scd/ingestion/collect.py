@@ -14,11 +14,10 @@ from dataclasses import dataclass, field
 from agentic_scd.config import Settings, get_settings
 from agentic_scd.db import connect, init_db
 from agentic_scd.ingestion.connectors.base import Connector, fetch_with_fallback
-from agentic_scd.ingestion.dedupe import assign_hash, is_duplicate
 from agentic_scd.ingestion.normalize import normalize
+from agentic_scd.ingestion.pipeline import ingest_signals
 from agentic_scd.ingestion.registry import load_registry
-from agentic_scd.ingestion.relevance import gate
-from agentic_scd.ingestion.store import persist_signal, record_rejected, write_snapshot
+from agentic_scd.ingestion.store import write_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +62,10 @@ def process_connector(connector: Connector, conn) -> SourceResult:  # noqa: ANN0
     write_snapshot(connector.name, raw_items)
 
     signals = [normalize(item, connector) for item in raw_items]
-    kept, dropped = gate(signals)
-    result.kept = len(kept)
-    result.dropped = len(dropped)
-
-    if conn is None:
-        return result  # offline: pipeline ran in-memory, nothing persisted.
-
-    for signal in kept:
-        assign_hash(signal)
-        if is_duplicate(signal.dedup_hash, conn):
-            continue
-        if persist_signal(conn, signal):
-            result.persisted += 1
-    for signal in dropped:
-        record_rejected(conn, assign_hash(signal).dedup_hash)
-    conn.commit()
+    ingested = ingest_signals(signals, conn)
+    result.kept = ingested.kept
+    result.dropped = ingested.dropped
+    result.persisted = ingested.persisted
     return result
 
 

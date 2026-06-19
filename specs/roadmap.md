@@ -54,19 +54,27 @@ scope/decisions in specs/2026-06-16-data-ingestion.
   signals persisted to Postgres and read into state, with fallback and the input guardrail
   working. ✅
 
-## Phase 1b — Data ingestion: always-on triggers & batch (pending)
+## Phase 1b — Data ingestion: always-on triggers ✅ COMPLETE
 Adds the separate-service trigger machinery deferred from 1a, on the same DB handoff so
 1b only adds trigger plumbing — no rework of the core pipeline.
-- **Scheduled poller** (APScheduler/cron) polling RSS + Open-Meteo every N minutes
-  (continuous monitoring even with nobody at the dashboard).
-- **FastAPI webhook** for real-time supplier push events (synthetic sender in the MVP;
-  HMAC signature auth is post-MVP).
+- **Scheduled poller** (APScheduler, in-process) running the enabled connectors
+  (RSS + Open-Meteo + synthetic) every N minutes, overlap-safe (`max_instances=1`) and
+  toggleable — continuous monitoring even with nobody at the dashboard.
+- **FastAPI webhook** for real-time supplier push events (`POST /signals`; synthetic
+  sender in the MVP; HMAC signature auth is post-MVP), in the same `agentic-scd-ingest`
+  service process as the poller.
+- Both triggers write through the **same** normalize → gate → dedupe → persist tail into
+  the same `signals` table; graceful with no DB / no network.
+- **Done when:** the ingestion service runs continuously (scheduled) and accepts webhook
+  pushes — all draining into the same `signals` table the pipeline reads. ✅
+
+## Phase 1c — Data ingestion: batch loaders & retention (pending)
+The remaining ingestion sources / housekeeping deferred from 1b.
 - **Batch loaders**: cached **Freightos Baltic Index** snapshots + **Kaggle
   SupplyChainNet** historical seed (baselines + KB history).
 - Retention/TTL on the seen-rejected cache and accepted signals; optional Parquet export.
-- **Done when:** the ingestion service runs continuously (scheduled), accepts webhook
-  pushes, and seeds history via the batch loaders — all draining into the same `signals`
-  table the pipeline reads.
+- **Done when:** a batch run seeds historical baselines into the `signals` table and
+  retention/TTL prunes stale rows — without disturbing the live triggers.
 
 ## Phase 2 — Thin end-to-end slice (walking skeleton)
 With real ingestion in place, wire every **remaining** agent as a minimal stub so the
