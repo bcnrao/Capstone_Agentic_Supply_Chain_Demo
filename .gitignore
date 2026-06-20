@@ -32,6 +32,9 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
+# Jupyter (notebooks are committed; checkpoints are not)
+.ipynb_checkpoints/
+
 # OS / editor
 .DS_Store
 .idea/

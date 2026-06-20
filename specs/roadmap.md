@@ -88,7 +88,7 @@ forward.
 - **Done when:** one command runs ingest(real)→classify→impact-map→forecast→simulate→
   recommend→dashboard and shows a result end-to-end. ✅
 
-## Phase 2.5 — Dev workflow: interactive notebooks
+## Phase 2.5 — Dev workflow: interactive notebooks ✅ COMPLETE
 Package the runnable chain behind notebooks so the peer group can drive each agent and
 the full graph and develop Phases 3+ in isolation. Adds no product capability.
 - A `notebooks/` directory + a `notebooks` `uv` group (`jupyterlab`, `ipykernel`,
@@ -98,7 +98,8 @@ the full graph and develop Phases 3+ in isolation. Adds no product capability.
 - **Diagrams** (Mermaid): an overall architecture diagram in the orchestration notebook,
   and a per-agent diagram in each agent notebook.
 - **Done when:** a peer can launch Jupyter and run the end-to-end and per-agent
-  notebooks against live state, with diagrams rendering.
+  notebooks against live state, with diagrams rendering. ✅ (eight notebooks under
+  `notebooks/`; `uv sync --group notebooks` → `uv run jupyter lab`)
 
 ## Phase 3 — Risk classification (DistilBERT)
 - News & event analysis via Groq `gpt-oss-120b` for category **classification +

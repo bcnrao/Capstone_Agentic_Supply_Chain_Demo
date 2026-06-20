@@ -282,6 +282,36 @@ what-if controls arrive in Phase 8).
 `uv run agentic-scd` works with no Docker and no network. The stubs are pure-Python and
 deterministic (no LLM/Prophet/SimPy yet), so `uv run pytest` stays green fully offline.
 
+## Dev notebooks (Phase 2.5)
+
+Interactive Jupyter notebooks so the team can drive each agent and the full graph by
+hand and develop Phases 3+ in isolation. They import the editable `agentic_scd` package,
+so they stay in lock-step with the source — no logic is duplicated.
+
+```bash
+uv sync --group notebooks         # installs jupyterlab + ipykernel (not a runtime dep)
+uv run jupyter lab                # launch, then pick the "Python 3 (agentic-scd)" kernel
+```
+
+Recommended order (under `notebooks/`):
+
+| Notebook | What it's for |
+|----------|---------------|
+| `00_orchestration` | The full pipeline with an **overall architecture diagram**; steps the graph and shows `GraphState` after each hop. |
+| `10_classify` … `50_recommend` | One per agent — each opens with **its own diagram** (internal steps, state contract, fallback) and calls the node in isolation. |
+| `60_ingestion` | Trigger connectors / batch loaders; inspect the relevance gate and the `signals` table. |
+| `90_contributor_guide` | Setup, conventions, and a worked example of **adding a new agent to the graph**. |
+
+The `00_orchestration` and `90_contributor_guide` notebooks include a **Setup** section
+that brings up Postgres (`docker compose up -d postgres`) and runs ingestion, so the
+notebooks work against live data — **Docker Desktop must be running** for that path. The
+per-agent notebooks run **fully offline** on synthetic sample state, so you can iterate
+with no DB.
+
+> **Committing notebooks:** clear outputs first (Edit → Clear Outputs of All Cells, or
+> `uv run jupyter nbconvert --clear-output --inplace notebooks/*.ipynb`) to keep diffs
+> reviewable. There is no strip hook — it's a convention.
+
 ## Evaluation
 
 - Risk classification accuracy
