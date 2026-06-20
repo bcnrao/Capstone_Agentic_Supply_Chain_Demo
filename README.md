@@ -71,10 +71,12 @@ The system is composed of specialized agents orchestrated with LangGraph:
 
 ## Quick start
 
-Two ways to clone and run. Both bring up the environment and then **stop there** — no UI
-or pipeline starts automatically; you pick a run mode (CLI, Gradio, or Jupyter).
+Two ways to clone and run, differing in **where the app runs** — in a container, or on
+your host via `uv`. **Postgres always runs in Docker** in both. Each brings the
+environment up and then **stops there** — no UI or pipeline starts automatically; you pick
+a run mode (CLI, Gradio, or Jupyter).
 
-### With Docker
+### Running with Docker
 
 The fastest path — **the only prerequisite is Docker** (Desktop on Windows/Mac, Engine on
 Linux; works the same in **GitHub Codespaces**). `docker compose` brings up Postgres plus
@@ -112,11 +114,13 @@ docker compose exec app uv run jupyter lab --ip 0.0.0.0 --no-browser --allow-roo
 container (and notebook changes are saved back to the repo). Stop everything with
 `docker compose down` (data persists on the `pgdata` volume; add `-v` to wipe it).
 
-### Without Docker
+### Running with uv
 
-**Prerequisite: [`uv`](https://docs.astral.sh/uv/)** — it manages dependencies, runs the
-app, and will **provision Python 3.11+ automatically** if your host doesn't already have
-it. Install uv if you don't have it yet:
+The app runs on your host; **Postgres still runs in Docker**.
+
+**Prerequisites:** **Docker** (for Postgres) and **[`uv`](https://docs.astral.sh/uv/)** —
+uv manages dependencies, runs the app, and will **provision Python 3.11+ automatically** if
+your host doesn't already have it. Install uv if you don't have it yet:
 
 ```bash
 # macOS / Linux
@@ -129,16 +133,17 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 pip install uv
 ```
 
-Then set up the project (uv fetches Python 3.11+ on the first sync if it's missing):
+Then set up the project (uv fetches Python 3.11+ on the first sync if it's missing) and
+start Postgres in Docker:
 
 ```bash
-cp .env.example .env          # GROQ_API_KEY can stay empty (offline)
-uv sync --group notebooks     # create .venv + install deps (incl. Jupyter)
+cp .env.example .env              # GROQ_API_KEY can stay empty (offline)
+uv sync --group notebooks         # create .venv + install deps (incl. Jupyter)
+docker compose up -d postgres     # just the database; the app runs on uv below
+docker compose ps                 # postgres should report "healthy"
 ```
 
-A database is **optional** — with none reachable the pipeline runs offline on a synthetic
-seed. For a real DB, either start the Docker Postgres (`docker compose up -d postgres`, if
-you have Docker) or point `DATABASE_URL` at your own Postgres, then seed:
+Optionally load some signals (otherwise a synthetic seed is used at run time):
 
 ```bash
 uv run agentic-scd-batch      # seed historical baselines
@@ -182,8 +187,7 @@ uv run ruff format --check .  # formatting
 Configuration is read from a `.env` file (see `.env.example`). With no
 `GROQ_API_KEY` set, the LLM wrapper returns a deterministic mock response so the
 scaffold never requires network access. Package layout lives under `src/agentic_scd/`
-(`config/`, `llm/`, `ingestion/`, `graph/`, `db/`); later phases fill these in per
-`specs/roadmap.md`.
+(`config/`, `llm/`, `ingestion/`, `graph/`, `db/`), filled in over successive phases.
 
 ## Dev database (Phase 0.5)
 
