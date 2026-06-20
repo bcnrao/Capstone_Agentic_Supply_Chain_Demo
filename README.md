@@ -196,8 +196,8 @@ Phase 1a runs collectors **on-demand**. Phase 1b wraps that same pipeline in two
 **always-on triggers** — a scheduled poller and a supplier webhook — running as one
 FastAPI service so the system monitors continuously instead of only when invoked. Both
 triggers write through the *same* normalize → gate → dedupe → persist path into the
-*same* `signals` table the graph drains; the batch loaders and retention/TTL are the
-remaining Phase 1b follow-up.
+*same* `signals` table the graph drains. Batch loaders and retention/TTL close out the
+ingestion layer in **Phase 1c** (below).
 
 ```bash
 docker compose up -d postgres     # optional — see the offline note below
@@ -225,6 +225,39 @@ whose `ingest_node` reads the new rows behind the input guardrail. Config lives 
 in-memory, and `POST /signals` returns HTTP 200 with `persisted=0` (never a 5xx); with
 **no network**, the poller falls back to synthetic/cached data. `uv run pytest` stays
 green offline (the webhook → persist round-trip test skips cleanly with no DB).
+
+## Batch loaders & retention (Phase 1c)
+
+Phase 1a/1b cover **live** sources. Phase 1c adds the deferred **historical** seeding and
+table housekeeping through one on-demand CLI — the batch counterpart to
+`agentic-scd-collect`. It reads **committed** snapshots under `data/seed/` so a run works
+**fully offline** (no Kaggle/Freightos download), feeds them through the *same*
+normalize → gate → dedupe → persist tail (idempotent on `dedup_hash`), and prunes stale
+rows.
+
+```bash
+uv run agentic-scd-batch          # offline: seed from data/seed/ + run retention
+uv run agentic-scd-batch --load   # loaders only (no retention)
+uv run agentic-scd-batch --retain # retention only (no seeding)
+```
+
+- **Freightos loader** (`FREIGHT_INDEX`) — Freightos Baltic Index freight-rate rows →
+  freight-rate baselines.
+- **Kaggle SupplyChainNet loader** (`DATASET`) — historical `demand` baselines + persisted
+  `disruption` KB-history records.
+- **Retention / TTL** — prunes `seen_rejected` hashes older than
+  `RETENTION_REJECTED_TTL_DAYS` (default 30) and **terminal** `signals` (`status='done'`)
+  older than `RETENTION_SIGNALS_TTL_DAYS` (default 90). It **never** touches
+  `new`/`processing` rows the pipeline still needs.
+
+**Persist, not embed.** Phase 1c lands this data in **Postgres** (+ snapshot files) and
+**does not embed anything** — the vector store (Chroma) is stood up later in Phase 4 (impact
+KB) and reused in Phase 7 (playbooks). The baselines feed **Prophet** forecasting in Phase 5.
+
+**Offline contract.** With **no DB**, the CLI still parses the seed snapshots, prints a
+per-source summary, and exits 0 (nothing persisted; retention a clean no-op). A second run
+with Postgres up persists **0 new** rows (idempotent). Config lives in `.env`
+(`BATCH_ENABLED`, `RETENTION_ENABLED`, `RETENTION_*_TTL_DAYS`); see `.env.example`.
 
 ## Walking skeleton (Phase 2)
 

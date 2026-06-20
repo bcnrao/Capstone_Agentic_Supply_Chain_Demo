@@ -18,6 +18,10 @@ DEFAULT_INGEST_HOST = "127.0.0.1"
 DEFAULT_INGEST_PORT = 8001
 DEFAULT_WEBHOOK_RELIABILITY = 0.6
 
+# Phase 1c batch-loader & retention defaults (see .env.example).
+DEFAULT_RETENTION_REJECTED_TTL_DAYS = 30
+DEFAULT_RETENTION_SIGNALS_TTL_DAYS = 90
+
 # Default large reasoning/generation model — Groq GPT-OSS-120B (see
 # specs/tech-stack.md). ``openai/gpt-oss-120b`` is the Groq API model id.
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
@@ -92,6 +96,12 @@ class Settings:
     ingest_port: int = DEFAULT_INGEST_PORT
     webhook_source_reliability: float = DEFAULT_WEBHOOK_RELIABILITY
 
+    # --- Batch loaders & retention (Phase 1c) -----------------------------
+    batch_enabled: bool = True
+    retention_enabled: bool = True
+    retention_rejected_ttl_days: int = DEFAULT_RETENTION_REJECTED_TTL_DAYS
+    retention_signals_ttl_days: int = DEFAULT_RETENTION_SIGNALS_TTL_DAYS
+
     @property
     def llm_is_mock(self) -> bool:
         """True when no real provider call should be made.
@@ -122,5 +132,13 @@ def get_settings() -> Settings:
         ingest_port=env_int("INGEST_PORT", DEFAULT_INGEST_PORT),
         webhook_source_reliability=env_float(
             "WEBHOOK_SOURCE_RELIABILITY", DEFAULT_WEBHOOK_RELIABILITY
+        ),
+        batch_enabled=env_flag("BATCH_ENABLED", default=True),
+        retention_enabled=env_flag("RETENTION_ENABLED", default=True),
+        retention_rejected_ttl_days=env_int(
+            "RETENTION_REJECTED_TTL_DAYS", DEFAULT_RETENTION_REJECTED_TTL_DAYS
+        ),
+        retention_signals_ttl_days=env_int(
+            "RETENTION_SIGNALS_TTL_DAYS", DEFAULT_RETENTION_SIGNALS_TTL_DAYS
         ),
     )

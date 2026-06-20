@@ -68,13 +68,15 @@ Adds the separate-service trigger machinery deferred from 1a, on the same DB han
 - **Done when:** the ingestion service runs continuously (scheduled) and accepts webhook
   pushes — all draining into the same `signals` table the pipeline reads. ✅
 
-## Phase 1c — Data ingestion: batch loaders & retention (pending)
+## Phase 1c — Data ingestion: batch loaders & retention ✅ COMPLETE
 The remaining ingestion sources / housekeeping deferred from 1b.
 - **Batch loaders**: cached **Freightos Baltic Index** snapshots + **Kaggle
-  SupplyChainNet** historical seed (baselines + KB history).
-- Retention/TTL on the seen-rejected cache and accepted signals; optional Parquet export.
+  SupplyChainNet** historical seed (baselines + KB history). ✅
+- Retention/TTL on the seen-rejected cache and accepted signals (Parquet export deferred —
+  not selected for this slice). ✅
 - **Done when:** a batch run seeds historical baselines into the `signals` table and
-  retention/TTL prunes stale rows — without disturbing the live triggers.
+  retention/TTL prunes stale rows — without disturbing the live triggers. ✅ (on-demand
+  `agentic-scd-batch` CLI; persists, doesn't embed — Chroma stays Phase 4/7)
 
 ## Phase 2 — Thin end-to-end slice (walking skeleton) ✅ COMPLETE
 With real ingestion in place, wire every **remaining** agent as a minimal stub so the
