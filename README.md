@@ -226,6 +226,29 @@ in-memory, and `POST /signals` returns HTTP 200 with `persisted=0` (never a 5xx)
 **no network**, the poller falls back to synthetic/cached data. `uv run pytest` stays
 green offline (the webhook → persist round-trip test skips cleanly with no DB).
 
+## Walking skeleton (Phase 2)
+
+The thin end-to-end slice: every remaining agent is wired as a **deterministic stub** so
+the whole chain runs now and produces one coherent result —
+`ingest → input-guard → classify → impact → forecast → simulate → recommend`. Each stub
+does the *simplest real thing*; Phases 3–7 deepen them one at a time (Groq/DistilBERT,
+RAG + Chroma, Prophet, SimPy, RAG-grounded mitigation) behind the same node signatures.
+
+```bash
+uv run agentic-scd                # run the full chain, print a stage-by-stage summary
+uv run agentic-scd-dashboard      # the same run in a minimal Gradio dashboard
+```
+
+The CLI prints classification, impact, forecast (baseline vs risk-adjusted), simulation
+(stockout probability + revenue impact), and recommended actions. The Gradio app exposes a
+**"Run pipeline"** button with one panel per stage (the run-status strip, heatmap, and
+what-if controls arrive in Phase 8).
+
+**Always demoable.** When ingestion yields no signals (no DB / no new rows), a deterministic
+**synthetic seed** injects one signal so the chain always shows a full end-to-end result —
+`uv run agentic-scd` works with no Docker and no network. The stubs are pure-Python and
+deterministic (no LLM/Prophet/SimPy yet), so `uv run pytest` stays green fully offline.
+
 ## Evaluation
 
 - Risk classification accuracy

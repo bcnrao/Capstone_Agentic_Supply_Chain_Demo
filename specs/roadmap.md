@@ -76,7 +76,7 @@ The remaining ingestion sources / housekeeping deferred from 1b.
 - **Done when:** a batch run seeds historical baselines into the `signals` table and
   retention/TTL prunes stale rows — without disturbing the live triggers.
 
-## Phase 2 — Thin end-to-end slice (walking skeleton)
+## Phase 2 — Thin end-to-end slice (walking skeleton) ✅ COMPLETE
 With real ingestion in place, wire every **remaining** agent as a minimal stub so the
 whole chain runs end-to-end. Each stub does the simplest real thing and passes state
 forward.
@@ -84,7 +84,7 @@ forward.
   lookup stub) → trivial forecast → tiny simulation → templated recommendation →
   render on Gradio.
 - **Done when:** one command runs ingest(real)→classify→impact-map→forecast→simulate→
-  recommend→dashboard and shows a result end-to-end.
+  recommend→dashboard and shows a result end-to-end. ✅
 
 ## Phase 3 — Risk classification (DistilBERT)
 - News & event analysis via Groq `gpt-oss-120b` for category **classification +
