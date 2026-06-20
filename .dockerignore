@@ -1,0 +1,27 @@
+# Keep the build context small and avoid copying host-specific or secret files into
+# the image. src/ and notebooks/ are bind-mounted at runtime for live edits.
+
+# Host virtualenv (Windows) — the image builds its own Linux venv via `uv sync`.
+.venv/
+
+# Git / VCS
+.git/
+.gitignore
+
+# Secrets — the app gets config via compose env, never bake .env into the image.
+.env
+
+# Python / tooling caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# Runtime data that should not be in the image (kept on volumes / regenerated).
+# data/seed/ and data/fallback/ ARE committed and needed by the batch loaders — keep them.
+data/snapshots/
+data/backups/

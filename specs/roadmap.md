@@ -88,7 +88,7 @@ forward.
 - **Done when:** one command runs ingest(real)→classify→impact-map→forecast→simulate→
   recommend→dashboard and shows a result end-to-end. ✅
 
-## Phase 2.5 — Dev workflow: interactive notebooks
+## Phase 2.5 — Dev workflow: interactive notebooks ✅ COMPLETE
 Package the runnable chain behind notebooks so the peer group can drive each agent and
 the full graph and develop Phases 3+ in isolation. Adds no product capability.
 - A `notebooks/` directory + a `notebooks` `uv` group (`jupyterlab`, `ipykernel`,
@@ -97,8 +97,15 @@ the full graph and develop Phases 3+ in isolation. Adds no product capability.
   recommend), **ingestion playground**, and a **contributor "start here"** notebook.
 - **Diagrams** (Mermaid): an overall architecture diagram in the orchestration notebook,
   and a per-agent diagram in each agent notebook.
+- **Docker quick-start** (so Docker is the only prerequisite to clone & run): a `Dockerfile`
+  + a second `docker-compose` **`app`** service (Python 3.11 + uv + the project) that comes
+  up **idle** alongside Postgres; the user then execs a run mode (CLI / Gradio / Jupyter).
+  README gains **With Docker / Without Docker** quick-start sections. This is a **dev
+  convenience**; the full multi-service containerization stays **Phase 10**.
 - **Done when:** a peer can launch Jupyter and run the end-to-end and per-agent
-  notebooks against live state, with diagrams rendering.
+  notebooks against live state, with diagrams rendering. ✅ (eight notebooks under
+  `notebooks/`; `uv sync --group notebooks` → `uv run jupyter lab`; or Docker-only via
+  `docker compose up` + `docker compose exec app …`)
 
 ## Phase 3 — Risk classification (DistilBERT)
 - News & event analysis via Groq `gpt-oss-120b` for category **classification +
@@ -157,6 +164,10 @@ the full graph and develop Phases 3+ in isolation. Adds no product capability.
   Langfuse.
 
 ## Phase 10 — Full containerization (Docker)
+- **Builds on the Phase 2.5 dev container:** a single idle `app` service + `Dockerfile`
+  (Python 3.11 + uv + the project) already exists for the dev quick-start. Phase 10 hardens
+  that image and **extends** the compose to the **full** multi-service stack below — it
+  does not start from scratch.
 - Author a `Dockerfile` for the app (LangGraph pipeline + FastAPI + Gradio) and **extend
   the Phase 0.5 `docker-compose.yml`** to run the full stack — the app container, the
   existing **PostgreSQL** service, a standalone **Chroma** server, and the **React** app
