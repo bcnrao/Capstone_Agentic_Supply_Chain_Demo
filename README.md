@@ -69,6 +69,25 @@ The system is composed of specialized agents orchestrated with LangGraph:
 - **Ingestion:** feedparser, NLP pipelines
 - **Dashboard:** Gradio
 
+## Project layout
+
+```
+repo-root/
+├── backend/                # the Python service: pipeline, ingestion, agents, notebooks, tests
+│   ├── src/agentic_scd/    #   importable package
+│   ├── notebooks/  tests/  scripts/  data/
+│   ├── pyproject.toml  uv.lock
+│   └── Dockerfile  .dockerignore
+├── docker-compose.yml      # orchestrates the stack (postgres + the app container)
+├── .env / .env.example     # shared config (DB creds, API keys)
+└── README.md
+```
+
+**Where to run what:** the Python project lives in **`backend/`** — run `uv` and
+`scripts/` commands from there (`cd backend`). `docker-compose.yml` and `.env` live at the
+**repo root** — run `docker compose` from the root. (A future `frontend/` React app will
+sit alongside `backend/`.)
+
 ## Quick start
 
 Two ways to clone and run, differing in **where the app runs** — in a container, or on
@@ -110,8 +129,8 @@ docker compose exec app uv run jupyter lab --ip 0.0.0.0 --no-browser --allow-roo
 #   open the printed URL, replacing the host with http://localhost:8888/...?token=...
 ```
 
-`src/` and `notebooks/` are bind-mounted, so edits on your host show up live in the
-container (and notebook changes are saved back to the repo). Stop everything with
+`backend/src` and `backend/notebooks` are bind-mounted, so edits on your host show up live
+in the container (and notebook changes are saved back to the repo). Stop everything with
 `docker compose down` (data persists on the `pgdata` volume; add `-v` to wipe it).
 
 ### Running with uv
@@ -133,14 +152,18 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 pip install uv
 ```
 
-Then set up the project (uv fetches Python 3.11+ on the first sync if it's missing) and
-start Postgres in Docker:
+From the repo **root**, prepare config and start Postgres; then `cd backend` for the
+Python project (uv fetches Python 3.11+ on first sync if missing):
 
 ```bash
+# repo root (where .env and docker-compose.yml live)
 cp .env.example .env              # GROQ_API_KEY can stay empty (offline)
-uv sync --group notebooks         # create .venv + install deps (incl. Jupyter)
-docker compose up -d postgres     # just the database; the app runs on uv below
+docker compose up -d postgres     # just the database; the app runs on uv
 docker compose ps                 # postgres should report "healthy"
+
+# the Python project
+cd backend
+uv sync --group notebooks         # create .venv + install deps (incl. Jupyter)
 ```
 
 Optionally load some signals (otherwise a synthetic seed is used at run time):
@@ -173,7 +196,7 @@ a typed LangGraph state, and a single stub ingestion node wired into a runnable
 graph. It runs **fully offline** with no API key.
 
 **Prerequisites:** [`uv`](https://docs.astral.sh/uv/) (it provisions Python 3.11+
-automatically).
+automatically). Run these from **`backend/`** (`cd backend`):
 
 ```bash
 uv sync                       # create .venv + install from pyproject.toml + uv.lock
@@ -186,7 +209,7 @@ uv run ruff format --check .  # formatting
 
 Configuration is read from a `.env` file (see `.env.example`). With no
 `GROQ_API_KEY` set, the LLM wrapper returns a deterministic mock response so the
-scaffold never requires network access. Package layout lives under `src/agentic_scd/`
+scaffold never requires network access. Package layout lives under `backend/src/agentic_scd/`
 (`config/`, `llm/`, `ingestion/`, `graph/`, `db/`), filled in over successive phases.
 
 ## Dev database (Phase 0.5)
@@ -214,8 +237,8 @@ If no database is reachable, `ping()` returns `PingResult(ok=False, ...)` with a
 clear message (never a crash), so the app stays offline-runnable and the test
 suite still passes.
 
-**Backup / restore** (cross-platform, via `uv run`). Dumps are timestamped SQL
-files written to `data/backups/` (git-ignored):
+**Backup / restore** (cross-platform, via `uv run` from `backend/`). Dumps are timestamped
+SQL files written to `backend/data/backups/` (git-ignored):
 
 ```bash
 uv run python scripts/db_dump.py                       # -> data/backups/pgdump-<ts>.sql
@@ -263,7 +286,7 @@ drop rate; re-tune the lexicon and re-run freely.
   `signals` table (the system of record and the decoupled handoff).
 - **Rejected items** → only their `dedup_hash` in `seen_rejected` (so the same junk
   isn't re-evaluated every run).
-- **Raw pulls** → timestamped JSON **snapshot files** in `data/snapshots/`
+- **Raw pulls** → timestamped JSON **snapshot files** in `backend/data/snapshots/`
   (gitignored), *not* the DB — the audit/replay path. Offline fallback fixtures live
   under `data/fallback/` (committed).
 
@@ -325,7 +348,7 @@ green offline (the webhook → persist round-trip test skips cleanly with no DB)
 
 Phase 1a/1b cover **live** sources. Phase 1c adds the deferred **historical** seeding and
 table housekeeping through one on-demand CLI — the batch counterpart to
-`agentic-scd-collect`. It reads **committed** snapshots under `data/seed/` so a run works
+`agentic-scd-collect`. It reads **committed** snapshots under `backend/data/seed/` so a run works
 **fully offline** (no Kaggle/Freightos download), feeds them through the *same*
 normalize → gate → dedupe → persist tail (idempotent on `dedup_hash`), and prunes stale
 rows.
@@ -384,11 +407,12 @@ hand and develop Phases 3+ in isolation. They import the editable `agentic_scd` 
 so they stay in lock-step with the source — no logic is duplicated.
 
 ```bash
+cd backend                        # the Python project (notebooks live here)
 uv sync --group notebooks         # installs jupyterlab + ipykernel (not a runtime dep)
-uv run jupyter lab                # launch, then pick the "Python 3 (agentic-scd)" kernel
+uv run jupyter lab                # launch, then pick the "Python 3 (ipykernel)" kernel
 ```
 
-Recommended order (under `notebooks/`):
+Recommended order (under `backend/notebooks/`):
 
 | Notebook | What it's for |
 |----------|---------------|
@@ -398,8 +422,8 @@ Recommended order (under `notebooks/`):
 | `90_contributor_guide` | Setup, conventions, and a worked example of **adding a new agent to the graph**. |
 
 The `00_orchestration` and `90_contributor_guide` notebooks include a **Setup** section
-that brings up Postgres (`docker compose up -d postgres`) and runs ingestion, so the
-notebooks work against live data — **Docker Desktop must be running** for that path. The
+that runs ingestion against Postgres — start it from the **repo root** first
+(`docker compose up -d postgres`), since the compose file and `.env` live there. The
 per-agent notebooks run **fully offline** on synthetic sample state, so you can iterate
 with no DB.
 

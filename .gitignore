@@ -20,12 +20,12 @@ venv/
 *.db
 
 # Postgres backup snapshots (keep the directory, ignore the dumps)
-/data/backups/*
-!/data/backups/.gitkeep
+/backend/data/backups/*
+!/backend/data/backups/.gitkeep
 
 # Ingestion raw-pull snapshots (keep the directory, ignore the live pulls)
-/data/snapshots/*
-!/data/snapshots/.gitkeep
+/backend/data/snapshots/*
+!/backend/data/snapshots/.gitkeep
 
 # Tooling caches
 .pytest_cache/
@@ -43,5 +43,6 @@ venv/
 # Misc
 docs
 
-# Planning/spec docs kept local, not checked in
+# Local-only files — kept on disk, not checked in
 /specs/
+/prompts.md

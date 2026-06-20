@@ -33,7 +33,7 @@ services:
 
   app:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     image: agentic_scd_app
     container_name: agentic_scd_app
@@ -53,8 +53,8 @@ services:
       - "8888:8888"   # Jupyter
     volumes:
       # Live edits: notebooks and source are bind-mounted; the in-image .venv is kept.
-      - ./notebooks:/app/notebooks
-      - ./src:/app/src
+      - ./backend/notebooks:/app/notebooks
+      - ./backend/src:/app/src
     # Idle so the infra is "up" but no run mode is chosen for you (exec one in).
     command: ["sleep", "infinity"]
     restart: unless-stopped
