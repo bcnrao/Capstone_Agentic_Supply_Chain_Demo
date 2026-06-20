@@ -125,7 +125,7 @@ def build_dashboard() -> gr.Blocks:
 
 def main() -> None:
     """CLI entrypoint: launch the Gradio dashboard."""
-    build_dashboard().launch()
+    build_dashboard().launch(share=True)
 
 
 if __name__ == "__main__":
