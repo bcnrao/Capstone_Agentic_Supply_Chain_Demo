@@ -42,3 +42,6 @@ venv/
 
 # Misc
 docs
+
+# Planning/spec docs kept local, not checked in
+/specs/
