@@ -69,13 +69,16 @@ The system is composed of specialized agents orchestrated with LangGraph:
 - **Ingestion:** feedparser, NLP pipelines
 - **Dashboard:** Gradio
 
-## Quick start (Docker only)
+## Quick start
 
-The fastest way to clone and run — **the only prerequisite is Docker** (Desktop on
-Windows/Mac, Engine on Linux; works the same in **GitHub Codespaces**). `docker compose`
-brings up the **infrastructure** — Postgres plus an `app` container (Python 3.11 + uv +
-the project, deps preinstalled) — and then **stops there**: no UI or pipeline starts
-automatically. You choose how to run.
+Two ways to clone and run. Both bring up the environment and then **stop there** — no UI
+or pipeline starts automatically; you pick a run mode (CLI, Gradio, or Jupyter).
+
+### With Docker
+
+The fastest path — **the only prerequisite is Docker** (Desktop on Windows/Mac, Engine on
+Linux; works the same in **GitHub Codespaces**). `docker compose` brings up Postgres plus
+an `app` container (Python 3.11 + uv + the project, deps preinstalled) and leaves it idle.
 
 ```bash
 cp .env.example .env          # Compose reads it; GROQ_API_KEY can stay empty (offline)
@@ -100,8 +103,8 @@ docker compose exec app uv run agentic-scd
 docker compose exec app uv run agentic-scd-dashboard
 #   then open http://localhost:7860
 
-# 3) Jupyter — the interactive dev notebooks
-docker compose exec app uv run jupyter lab --ip 0.0.0.0 --no-browser
+# 3) Jupyter — the interactive dev notebooks (--allow-root: the container runs as root)
+docker compose exec app uv run jupyter lab --ip 0.0.0.0 --no-browser --allow-root
 #   open the printed URL, replacing the host with http://localhost:8888/...?token=...
 ```
 
@@ -109,9 +112,53 @@ docker compose exec app uv run jupyter lab --ip 0.0.0.0 --no-browser
 container (and notebook changes are saved back to the repo). Stop everything with
 `docker compose down` (data persists on the `pgdata` volume; add `-v` to wipe it).
 
-> Prefer running on your host with `uv` instead of in the container? That path is below
-> (**Getting Started** / **Dev database**): `docker compose up -d postgres` for just the
-> DB, then `uv run …` locally.
+### Without Docker
+
+**Prerequisite: [`uv`](https://docs.astral.sh/uv/)** — it manages dependencies, runs the
+app, and will **provision Python 3.11+ automatically** if your host doesn't already have
+it. Install uv if you don't have it yet:
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# …or, if you already have Python + pip:
+pip install uv
+```
+
+Then set up the project (uv fetches Python 3.11+ on the first sync if it's missing):
+
+```bash
+cp .env.example .env          # GROQ_API_KEY can stay empty (offline)
+uv sync --group notebooks     # create .venv + install deps (incl. Jupyter)
+```
+
+A database is **optional** — with none reachable the pipeline runs offline on a synthetic
+seed. For a real DB, either start the Docker Postgres (`docker compose up -d postgres`, if
+you have Docker) or point `DATABASE_URL` at your own Postgres, then seed:
+
+```bash
+uv run agentic-scd-batch      # seed historical baselines
+uv run agentic-scd-collect    # run the connectors once
+```
+
+Then pick a run mode:
+
+```bash
+# 1) CLI — end-to-end pipeline, prints a stage-by-stage summary
+uv run agentic-scd
+
+# 2) Gradio dashboard — "Run pipeline" UI
+uv run agentic-scd-dashboard
+#   then open http://localhost:7860
+
+# 3) Jupyter — the interactive dev notebooks
+uv run jupyter lab
+#   opens in your browser; pick the "Python 3 (ipykernel)" kernel
+```
 
 ## Getting Started (Phase 0 scaffold)
 
