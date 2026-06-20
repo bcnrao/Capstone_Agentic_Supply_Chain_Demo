@@ -88,6 +88,18 @@ forward.
 - **Done when:** one command runs ingest(real)→classify→impact-map→forecast→simulate→
   recommend→dashboard and shows a result end-to-end. ✅
 
+## Phase 2.5 — Dev workflow: interactive notebooks
+Package the runnable chain behind notebooks so the peer group can drive each agent and
+the full graph and develop Phases 3+ in isolation. Adds no product capability.
+- A `notebooks/` directory + a `notebooks` `uv` group (`jupyterlab`, `ipykernel`,
+  run via `uv run jupyter lab`); notebooks import the editable `agentic_scd` package.
+- **End-to-end orchestration**, **per-agent** (classify/impact/forecast/simulate/
+  recommend), **ingestion playground**, and a **contributor "start here"** notebook.
+- **Diagrams** (Mermaid): an overall architecture diagram in the orchestration notebook,
+  and a per-agent diagram in each agent notebook.
+- **Done when:** a peer can launch Jupyter and run the end-to-end and per-agent
+  notebooks against live state, with diagrams rendering.
+
 ## Phase 3 — Risk classification (DistilBERT)
 - News & event analysis via Groq `gpt-oss-120b` for category **classification +
   extraction** (no RAG here — the incoming article is the context).
@@ -205,6 +217,8 @@ inter-agent comms — LangGraph state handles that), and JWT/RBAC multi-tenant a
 - Ingestion (Phase 1) is the foundational data layer and is built first. The walking
   skeleton is Phase 2; after it, phases 3–9 each **deepen one agent** of the
   already-connected chain — integration risk is paid down early.
+- Phase 2.5 is a **dev-tooling interlude** (notebooks for the peer group), not an
+  agent-deepening step; it adds no product capability and doesn't shift later numbers.
 - The **vector store** is introduced in Phase 4 (impact mapping) and **reused** in
   Phase 7 (mitigation) — stand it up once, index two corpora.
 - Keep the end-to-end path green after every phase; never let the skeleton rot.
