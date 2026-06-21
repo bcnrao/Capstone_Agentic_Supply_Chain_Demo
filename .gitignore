@@ -44,5 +44,4 @@ venv/
 docs
 
 # Local-only files — kept on disk, not checked in
-/specs/
 /prompts.md
