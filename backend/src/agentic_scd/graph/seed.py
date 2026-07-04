@@ -39,4 +39,10 @@ def seed_node(state: "GraphState") -> dict:
         if signal:
             return {"new_signals": [signal]}
     connector = SyntheticConnector(name="demo_seed", reliability=0.7, count=1)
-    return {"new_signals": [normalize(item, connector) for item in connector.fetch()]}
+    raw = RawItem(
+        title="Tariff disrupts customs clearance for inbound imports",
+        body="A new tariff and customs checks are delaying inbound replenishment across cross-border lanes.",
+        location={"region": "India"},
+        payload={"severity_hint": "moderate", "demo_seed": True},
+    )
+    return {"new_signals": [normalize(raw, connector)]}

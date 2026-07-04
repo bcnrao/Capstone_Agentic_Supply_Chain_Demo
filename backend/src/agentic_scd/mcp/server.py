@@ -31,6 +31,22 @@ def run_fastmcp() -> bool:
         return tools.call_tool("load_supply_dataset", {})
 
     @server.tool()
+    def load_network_knowledge() -> dict:
+        return tools.call_tool("load_network_knowledge", {})
+
+    @server.tool()
+    def load_mitigation_playbooks() -> dict:
+        return tools.call_tool("load_mitigation_playbooks", {})
+
+    @server.tool()
+    def load_seed_corpus() -> dict:
+        return tools.call_tool("load_seed_corpus", {})
+
+    @server.tool()
+    def inspect_runtime_state(signal_limit: int = 5, run_limit: int = 5) -> dict:
+        return tools.call_tool("inspect_runtime_state", {"signal_limit": signal_limit, "run_limit": run_limit})
+
+    @server.tool()
     def synthetic_scenarios(count: int = 4) -> dict:
         return tools.call_tool("synthetic_scenarios", {"count": count})
 

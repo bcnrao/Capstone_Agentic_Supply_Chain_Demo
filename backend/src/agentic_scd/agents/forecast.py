@@ -45,7 +45,8 @@ def baseline_from_dataset(path: Path | None = None) -> list[float]:
 
 def build_forecast(classifications: list[Classification], impacts: list[ImpactMap]) -> Forecast:
     risk = aggregate_risk(classifications)
-    baseline = baseline_from_dataset()
+    history = __import__("agentic_scd.data.history", fromlist=["baseline_from_history"])
+    baseline, baseline_source = history.baseline_from_history(HORIZON)
     disruption_factor = min(0.55, risk * (0.18 + 0.025 * len(impacts)))
     adjusted = [round(value * (1 - disruption_factor * ((idx + 1) / HORIZON)), 2) for idx, value in enumerate(baseline)]
     dates = [(date.today() + timedelta(days=7 * idx)).isoformat() for idx in range(HORIZON)]
@@ -55,7 +56,13 @@ def build_forecast(classifications: list[Classification], impacts: list[ImpactMa
     inventory_days = round(max(1.0, 26 * (1 - risk) + 4), 1)
     delay = round(max(0.0, risk * 12 + len(impacts) * 0.7), 1)
     mape = round(abs(mean_baseline - mean_adjusted) / max(mean_baseline, 1.0), 4)
-    return Forecast(dates=dates, baseline=baseline, adjusted=adjusted, demand_deviation_pct=deviation, inventory_days_left=inventory_days, predicted_delay_days=delay, mape_estimate=mape, note=f"Offline baseline from the packaged supply-chain dataset, adjusted by aggregate risk {risk:.2f}.")
+    if baseline_source == "database":
+        note = f"Baseline source: persisted DATASET history in the configured database, adjusted by aggregate risk {risk:.2f}."
+    elif baseline_source == "seed_csv":
+        note = f"Baseline source: packaged supply-chain CSV baseline, adjusted by aggregate risk {risk:.2f}."
+    else:
+        note = f"Baseline source: synthetic fallback baseline, adjusted by aggregate risk {risk:.2f}."
+    return Forecast(dates=dates, baseline=baseline, adjusted=adjusted, demand_deviation_pct=deviation, inventory_days_left=inventory_days, predicted_delay_days=delay, mape_estimate=mape, note=note)
 
 
 def forecast_node(state: "GraphState") -> dict:

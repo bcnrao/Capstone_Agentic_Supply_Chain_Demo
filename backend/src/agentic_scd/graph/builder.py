@@ -40,9 +40,16 @@ NODE_FNS = {
 
 class SimpleGraph:
     def invoke(self, state: dict | None = None) -> GraphState:
+        from agentic_scd.agents.output_guardrail import output_guardrail_node
+        from agentic_scd.graph.routing import PRE_CLASSIFY_STEPS, route_steps
+
         current: dict = dict(state or {})
-        for name in PIPELINE:
-            update = NODE_FNS[name](current)
+        node_fns = {**NODE_FNS, "output_guardrail": output_guardrail_node}
+        for name in PRE_CLASSIFY_STEPS:
+            update = node_fns[name](current)
+            current.update(update or {})
+        for name in route_steps(current):
+            update = node_fns[name](current)
             current.update(update or {})
         return current
 
@@ -51,13 +58,22 @@ def build_graph() -> Any:
     try:
         from langgraph.graph import END, START, StateGraph
 
+        from agentic_scd.agents.output_guardrail import output_guardrail_node
+        from agentic_scd.graph.routing import PRE_CLASSIFY_STEPS, route_entry_node, route_exit_edges
+
+        node_fns = {**NODE_FNS, "output_guardrail": output_guardrail_node}
         builder = StateGraph(GraphState)
-        for name in PIPELINE:
-            builder.add_node(name, NODE_FNS[name])
-        builder.add_edge(START, PIPELINE[0])
-        for upstream, downstream in zip(PIPELINE, PIPELINE[1:], strict=False):
+        for name, node in node_fns.items():
+            builder.add_node(name, node)
+        builder.add_edge(START, PRE_CLASSIFY_STEPS[0])
+        for upstream, downstream in zip(PRE_CLASSIFY_STEPS, PRE_CLASSIFY_STEPS[1:], strict=False):
             builder.add_edge(upstream, downstream)
-        builder.add_edge(PIPELINE[-1], END)
+        builder.add_conditional_edges("classify", route_entry_node, route_exit_edges())
+        builder.add_edge("impact", "forecast")
+        builder.add_edge("forecast", "simulate")
+        builder.add_edge("simulate", "recommend")
+        builder.add_edge("recommend", "output_guardrail")
+        builder.add_edge("output_guardrail", END)
         return builder.compile()
     except Exception:
         return SimpleGraph()

@@ -23,19 +23,36 @@ logger = logging.getLogger(__name__)
 
 class RunRequest(BaseModel):
     scenario_name: str | None = None
+    use_pending_signals: bool = False
+
+
+def database_mode(url: str | None) -> str:
+    lowered = (url or "").lower()
+    if lowered.startswith("postgresql:") or lowered.startswith("postgres:"):
+        return "postgres"
+    if lowered.startswith("sqlite:"):
+        return "sqlite"
+    return "none"
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Agentic SCD API", version="1.0.2")
+    app = FastAPI(title="Agentic SCD API", version="1.0.3")
 
     @app.get("/health")
     def health() -> dict:
-        result = ping()
-        return {"status": "ok" if result.ok else "degraded", "database": result.detail}
+        settings = get_settings()
+        result = ping(settings)
+        return {
+            "status": "ok" if result.ok else "degraded",
+            "database": result.detail,
+            "database_mode": database_mode(settings.resolved_database_url),
+            "llm_mode": "mock" if settings.llm_is_mock else "groq",
+            "data_dir": str(settings.data_dir),
+        }
 
     @app.post("/run")
     def run_pipeline(payload: RunRequest) -> dict:
-        state = run(payload.scenario_name)
+        state = run(payload.scenario_name, use_pending_signals=payload.use_pending_signals)
         return serialize_state(state)
 
     @app.post("/collect")

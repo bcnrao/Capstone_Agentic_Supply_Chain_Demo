@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
+from agentic_scd.config import get_settings
+from agentic_scd.db import connect, init_db, ping
 from agentic_scd.ingestion.connectors.open_meteo import OpenMeteoConnector
 from agentic_scd.ingestion.connectors.rss import RssConnector
 from agentic_scd.ingestion.connectors.synthetic import SyntheticConnector
 from agentic_scd.ingestion.paths import FALLBACK_DIR, SEED_DIR
+from agentic_scd.ingestion.store import recent_runs, recent_signals
+
+
+def database_mode(url: str | None) -> str:
+    lowered = (url or "").lower()
+    if lowered.startswith("postgresql:") or lowered.startswith("postgres:"):
+        return "postgres"
+    if lowered.startswith("sqlite:"):
+        return "sqlite"
+    return "none"
 
 
 class ExternalDataMCP:
@@ -16,6 +27,10 @@ class ExternalDataMCP:
             {"name": "fetch_weather_hubs", "description": "Fetch Open-Meteo weather signals for configured logistics hubs."},
             {"name": "load_freight_snapshot", "description": "Load the packaged Freightos-style freight snapshot."},
             {"name": "load_supply_dataset", "description": "Load the packaged Kaggle-style supply-chain CSV metadata."},
+            {"name": "load_network_knowledge", "description": "Load the packaged supplier, facility, and lane knowledge graph."},
+            {"name": "load_mitigation_playbooks", "description": "Load the packaged mitigation playbooks used by the recommendation agent."},
+            {"name": "load_seed_corpus", "description": "Inspect the packaged synthetic and historical disruption corpora."},
+            {"name": "inspect_runtime_state", "description": "Inspect the local runtime mode, database health, and recent persisted data."},
             {"name": "synthetic_scenarios", "description": "Return deterministic synthetic disruption scenarios."},
         ]
 
@@ -38,7 +53,45 @@ class ExternalDataMCP:
             return json.loads((SEED_DIR / "freightos_baltic_index.json").read_text(encoding="utf-8"))
         if name == "load_supply_dataset":
             path = SEED_DIR / "supply_chain_dataset.csv"
-            return {"path": str(path), "rows": sum(1 for _ in path.open(encoding="utf-8")) - 1}
+            preview = path.read_text(encoding="utf-8").splitlines()[:6]
+            return {"path": str(path), "rows": max(0, len(preview) - 1) if len(preview) <= 6 else sum(1 for _ in path.open(encoding="utf-8")) - 1, "preview": preview}
+        if name == "load_network_knowledge":
+            return json.loads((SEED_DIR / "network.json").read_text(encoding="utf-8"))
+        if name == "load_mitigation_playbooks":
+            rows = json.loads((SEED_DIR / "playbooks.json").read_text(encoding="utf-8"))
+            return {"count": len(rows), "items": rows}
+        if name == "load_seed_corpus":
+            scenarios = json.loads((SEED_DIR / "scenarios.json").read_text(encoding="utf-8"))
+            historical = json.loads((SEED_DIR / "kaggle_supplychainnet.json").read_text(encoding="utf-8"))
+            synthetic = [line for line in (SEED_DIR / "synthetic_disruption_events.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+            return {
+                "scenario_count": len(scenarios),
+                "historical_demand_rows": sum(1 for row in historical.get("records", []) if row.get("kind") == "demand"),
+                "historical_disruption_rows": sum(1 for row in historical.get("records", []) if row.get("kind") == "disruption"),
+                "synthetic_event_rows": len(synthetic),
+            }
+        if name == "inspect_runtime_state":
+            settings = get_settings()
+            status = ping(settings)
+            signals = []
+            runs = []
+            try:
+                init_db(settings)
+                with connect(settings) as conn:
+                    signals = [item.model_dump(mode="json") for item in recent_signals(conn, int(arguments.get("signal_limit", 5)))]
+                    runs = recent_runs(conn, int(arguments.get("run_limit", 5)))
+            except Exception:
+                signals = []
+                runs = []
+            return {
+                "database_mode": database_mode(settings.resolved_database_url),
+                "database_ok": status.ok,
+                "database_status": status.detail,
+                "llm_mode": "mock" if settings.llm_is_mock else "groq",
+                "data_dir": str(settings.data_dir),
+                "recent_signals": signals,
+                "recent_runs": runs,
+            }
         if name == "synthetic_scenarios":
             connector = SyntheticConnector("mcp_synthetic", 0.7, int(arguments.get("count", 4)))
             return {"items": [item.model_dump() for item in connector.fetch()]}
