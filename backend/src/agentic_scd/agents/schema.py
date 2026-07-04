@@ -12,6 +12,19 @@ class EventAnalysis(BaseModel):
     summary: str = ""
 
 
+class WeatherRisk(BaseModel):
+    signal_id: str
+    region: str | None = None
+    hub: str | None = None
+    alert_level: str = "NONE"
+    severity_score: float = Field(default=0.0, ge=0, le=10)
+    wind_kph: float | None = None
+    precipitation_mm: float | None = None
+    disruption_factor: float = Field(default=0.0, ge=0, le=1)
+    monitoring_window_days: int = 0
+    summary: str = ""
+
+
 class Classification(BaseModel):
     signal_id: str
     category: str
@@ -68,6 +81,8 @@ class Forecast(BaseModel):
     predicted_delay_days: float = 0.0
     mape_estimate: float = 0.0
     note: str = ""
+    model_name: str = ""
+    freight_pressure_pct: float = 0.0
 
 
 class Simulation(BaseModel):
@@ -80,6 +95,7 @@ class Simulation(BaseModel):
     assumptions: str = ""
     revenue_loss_p50: float = 0.0
     revenue_loss_p90: float = 0.0
+    engine: str = ""
 
 
 class MitigationAction(BaseModel):
@@ -94,3 +110,4 @@ class Recommendation(BaseModel):
     structured_actions: list[MitigationAction] = Field(default_factory=list)
     summary: str = ""
     evidence: list[str] = Field(default_factory=list)
+    generation_mode: str = "deterministic"

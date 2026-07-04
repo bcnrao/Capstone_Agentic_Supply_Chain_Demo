@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from agentic_scd.agents.forecast_engine import adjusted_projection, baseline_projection, freight_pressure
 from agentic_scd.agents.schema import Classification, Forecast, ImpactMap
 from agentic_scd.ingestion.paths import SEED_DIR
 
@@ -45,16 +46,15 @@ def baseline_from_dataset(path: Path | None = None) -> list[float]:
 
 def build_forecast(classifications: list[Classification], impacts: list[ImpactMap]) -> Forecast:
     risk = aggregate_risk(classifications)
-    history = __import__("agentic_scd.data.history", fromlist=["baseline_from_history"])
-    baseline, baseline_source = history.baseline_from_history(HORIZON)
-    disruption_factor = min(0.55, risk * (0.18 + 0.025 * len(impacts)))
-    adjusted = [round(value * (1 - disruption_factor * ((idx + 1) / HORIZON)), 2) for idx, value in enumerate(baseline)]
+    baseline, baseline_source, model_name = baseline_projection(HORIZON)
+    freight_delta, freight_source = freight_pressure()
+    adjusted, disruption_factor = adjusted_projection(baseline, risk, len(impacts), freight_delta)
     dates = [(date.today() + timedelta(days=7 * idx)).isoformat() for idx in range(HORIZON)]
     deviation = 0.0 if not baseline else round(100 * (sum(adjusted) - sum(baseline)) / sum(baseline), 2)
     mean_adjusted = float(np.mean(adjusted)) if adjusted else 0.0
     mean_baseline = float(np.mean(baseline)) if baseline else 1.0
     inventory_days = round(max(1.0, 26 * (1 - risk) + 4), 1)
-    delay = round(max(0.0, risk * 12 + len(impacts) * 0.7), 1)
+    delay = round(max(0.0, risk * 12 + len(impacts) * 0.7 + max(0.0, freight_delta) * 18), 1)
     mape = round(abs(mean_baseline - mean_adjusted) / max(mean_baseline, 1.0), 4)
     if baseline_source == "database":
         note = f"Baseline source: persisted DATASET history in the configured database, adjusted by aggregate risk {risk:.2f}."
@@ -62,7 +62,8 @@ def build_forecast(classifications: list[Classification], impacts: list[ImpactMa
         note = f"Baseline source: packaged supply-chain CSV baseline, adjusted by aggregate risk {risk:.2f}."
     else:
         note = f"Baseline source: synthetic fallback baseline, adjusted by aggregate risk {risk:.2f}."
-    return Forecast(dates=dates, baseline=baseline, adjusted=adjusted, demand_deviation_pct=deviation, inventory_days_left=inventory_days, predicted_delay_days=delay, mape_estimate=mape, note=note)
+    note = f"{note} Forecast engine: {model_name}. Freight pressure source: {freight_source} ({freight_delta:+.1%})."
+    return Forecast(dates=dates, baseline=baseline, adjusted=adjusted, demand_deviation_pct=deviation, inventory_days_left=inventory_days, predicted_delay_days=delay, mape_estimate=mape, note=note, model_name=model_name, freight_pressure_pct=round(freight_delta * 100.0, 2))
 
 
 def forecast_node(state: "GraphState") -> dict:

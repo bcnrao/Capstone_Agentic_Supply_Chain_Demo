@@ -27,7 +27,25 @@ def config_path(name: str) -> Path:
 
 FALLBACK_DIR = existing_path(PROJECT_ROOT / "data" / "fallback", ASSET_DIR / "fallback")
 SEED_DIR = existing_path(PROJECT_ROOT / "data" / "seed", ASSET_DIR / "seed")
-SOURCES_YAML = config_path("sources.yaml")
-LEXICON_YAML = config_path("lexicon.yaml")
-SNAPSHOT_DIR = get_settings().data_dir / "snapshots"
-RUN_DIR = get_settings().data_dir / "runs"
+
+
+def sources_yaml_path() -> Path:
+    return config_path("sources.yaml")
+
+
+def lexicon_yaml_path() -> Path:
+    return config_path("lexicon.yaml")
+
+
+def snapshot_dir() -> Path:
+    return get_settings().data_dir / "snapshots"
+
+
+def run_dir() -> Path:
+    return get_settings().data_dir / "runs"
+
+
+SOURCES_YAML = sources_yaml_path()
+LEXICON_YAML = lexicon_yaml_path()
+SNAPSHOT_DIR = snapshot_dir()
+RUN_DIR = run_dir()

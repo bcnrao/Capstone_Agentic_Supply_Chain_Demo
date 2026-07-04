@@ -25,4 +25,4 @@ def completion(prompt: str, *, system: str | None = None, settings: Settings | N
         response = client.chat.completions.create(model=settings.groq_model, messages=messages, **kwargs)
         return response.choices[0].message.content or ""
     except Exception:
-        return mock_completion(prompt)
+        return ""

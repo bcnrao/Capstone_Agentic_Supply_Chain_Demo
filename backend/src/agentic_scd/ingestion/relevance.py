@@ -5,13 +5,13 @@ from pathlib import Path
 
 import yaml
 
-from agentic_scd.ingestion.paths import LEXICON_YAML
+from agentic_scd.ingestion.paths import lexicon_yaml_path
 from agentic_scd.ingestion.schema import DisruptionSignal
 
 
 @lru_cache(maxsize=8)
 def load_lexicon(path: str | Path | None = None) -> tuple[str, ...]:
-    lexicon_path = Path(path) if path else LEXICON_YAML
+    lexicon_path = Path(path) if path else lexicon_yaml_path()
     doc = yaml.safe_load(lexicon_path.read_text(encoding="utf-8")) or {}
     return tuple(str(item).lower() for item in doc.get("keywords", []))
 

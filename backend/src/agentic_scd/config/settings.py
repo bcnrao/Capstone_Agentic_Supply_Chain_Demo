@@ -7,6 +7,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from agentic_scd.config.localfirst import apply_local_env_defaults
+
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 DEFAULT_DATA_DIR = Path.home() / ".agentic_scd"
 
@@ -58,7 +60,7 @@ class Settings:
     database_url: str | None = None
     groq_api_key: str | None = None
     groq_model: str = DEFAULT_GROQ_MODEL
-    use_mock_llm: bool = True
+    use_mock_llm: bool = False
     ingest_poll_interval_minutes: int = 10
     ingest_scheduler_enabled: bool = True
     ingest_host: str = "127.0.0.1"
@@ -83,13 +85,14 @@ class Settings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     load_dotenv()
+    apply_local_env_defaults()
     data_dir = resolve_data_dir()
     return Settings(
         data_dir=data_dir,
         database_url=build_database_url(data_dir),
         groq_api_key=os.getenv("GROQ_API_KEY") or None,
         groq_model=os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL),
-        use_mock_llm=env_flag("USE_MOCK_LLM", default=True),
+        use_mock_llm=env_flag("USE_MOCK_LLM", default=False),
         ingest_poll_interval_minutes=env_int("INGEST_POLL_INTERVAL_MINUTES", 10),
         ingest_scheduler_enabled=env_flag("INGEST_SCHEDULER_ENABLED", default=True),
         ingest_host=os.getenv("INGEST_HOST", "127.0.0.1"),

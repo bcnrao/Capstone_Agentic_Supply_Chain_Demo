@@ -6,7 +6,7 @@ from pathlib import Path
 
 from agentic_scd.ingestion.connectors.base import RawItem
 from agentic_scd.ingestion.dedupe import assign_hash
-from agentic_scd.ingestion.paths import RUN_DIR, SNAPSHOT_DIR
+from agentic_scd.ingestion.paths import run_dir, snapshot_dir
 from agentic_scd.ingestion.schema import DisruptionSignal, Location
 from agentic_scd.ingestion.sqlutil import commit, dialect, execute, placeholders
 
@@ -190,15 +190,17 @@ def mark_done(conn, signal_ids: list[str]) -> None:
 
 
 def write_snapshot(connector_name: str, raw_items: list[RawItem]) -> Path:
-    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    target_dir = snapshot_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = SNAPSHOT_DIR / f"{connector_name}-{stamp}.json"
+    path = target_dir / f"{connector_name}-{stamp}.json"
     path.write_text(json.dumps([item.model_dump() for item in raw_items], default=str, indent=2), encoding="utf-8")
     return path
 
 
 def save_run_result(conn, run_id: str, state: dict, scenario_name: str | None = None) -> Path:
-    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    target_dir = run_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
     route = state.get("route", "unknown")
     classifications = state.get("classifications", []) or []
     max_severity = max((getattr(item, "severity", 0.0) for item in classifications), default=0.0)
@@ -210,7 +212,7 @@ def save_run_result(conn, run_id: str, state: dict, scenario_name: str | None = 
         else:
             execute(conn, "INSERT INTO pipeline_runs (run_id, scenario_name, route, max_severity, payload) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (run_id) DO UPDATE SET scenario_name = EXCLUDED.scenario_name, route = EXCLUDED.route, max_severity = EXCLUDED.max_severity, payload = EXCLUDED.payload", (run_id, scenario_name, route, max_severity, json_adapter(serialized)))
         commit(conn)
-    path = RUN_DIR / f"{run_id}.json"
+    path = target_dir / f"{run_id}.json"
     path.write_text(payload, encoding="utf-8")
     return path
 

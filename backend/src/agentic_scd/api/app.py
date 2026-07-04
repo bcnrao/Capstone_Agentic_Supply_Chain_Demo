@@ -14,6 +14,7 @@ from agentic_scd.ingestion.normalize import normalize
 from agentic_scd.ingestion.pipeline import ingest_signals
 from agentic_scd.ingestion.store import recent_runs, recent_signals, serialize_state
 from agentic_scd.ingestion.webhook import WebhookEvent, webhook_source
+from agentic_scd.rag.retriever import retrieval_mode, retriever_stats
 from agentic_scd.runtime_warnings import suppress_known_dependency_warnings
 
 suppress_known_dependency_warnings()
@@ -46,8 +47,10 @@ def create_app() -> FastAPI:
             "status": "ok" if result.ok else "degraded",
             "database": result.detail,
             "database_mode": database_mode(settings.resolved_database_url),
-            "llm_mode": "mock" if settings.llm_is_mock else "groq",
+            "llm_mode": "mock" if settings.llm_is_mock else f"groq:{settings.groq_model}",
             "data_dir": str(settings.data_dir),
+            "retrieval_mode": retrieval_mode(),
+            "retriever_stats": retriever_stats(),
         }
 
     @app.post("/run")

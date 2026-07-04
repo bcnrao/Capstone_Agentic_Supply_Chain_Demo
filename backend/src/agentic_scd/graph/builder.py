@@ -8,6 +8,7 @@ from agentic_scd.agents.impact import impact_node
 from agentic_scd.agents.news import news_node
 from agentic_scd.agents.recommend import recommend_node
 from agentic_scd.agents.simulate import simulate_node
+from agentic_scd.agents.weather import weather_node
 from agentic_scd.graph.seed import seed_node
 from agentic_scd.graph.state import GraphState
 from agentic_scd.ingestion.agent import ingestion_node
@@ -18,6 +19,7 @@ PIPELINE = [
     "input_guardrail",
     "seed",
     "news",
+    "weather",
     "classify",
     "impact",
     "forecast",
@@ -30,6 +32,7 @@ NODE_FNS = {
     "input_guardrail": input_guardrail_node,
     "seed": seed_node,
     "news": news_node,
+    "weather": weather_node,
     "classify": classify_node,
     "impact": impact_node,
     "forecast": forecast_node,

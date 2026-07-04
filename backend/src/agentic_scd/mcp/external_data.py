@@ -5,10 +5,12 @@ import json
 from agentic_scd.config import get_settings
 from agentic_scd.db import connect, init_db, ping
 from agentic_scd.ingestion.connectors.open_meteo import OpenMeteoConnector
+from agentic_scd.ingestion.connectors.freight import FreightIndexConnector
 from agentic_scd.ingestion.connectors.rss import RssConnector
 from agentic_scd.ingestion.connectors.synthetic import SyntheticConnector
 from agentic_scd.ingestion.paths import FALLBACK_DIR, SEED_DIR
 from agentic_scd.ingestion.store import recent_runs, recent_signals
+from agentic_scd.rag.retriever import retrieval_mode, retriever_stats
 
 
 def database_mode(url: str | None) -> str:
@@ -25,11 +27,13 @@ class ExternalDataMCP:
         return [
             {"name": "fetch_rss_signals", "description": "Fetch supply-chain RSS signals with cached fallback."},
             {"name": "fetch_weather_hubs", "description": "Fetch Open-Meteo weather signals for configured logistics hubs."},
+            {"name": "fetch_freight_index", "description": "Fetch the local-first freight index feed with cached fallback."},
             {"name": "load_freight_snapshot", "description": "Load the packaged Freightos-style freight snapshot."},
             {"name": "load_supply_dataset", "description": "Load the packaged Kaggle-style supply-chain CSV metadata."},
             {"name": "load_network_knowledge", "description": "Load the packaged supplier, facility, and lane knowledge graph."},
             {"name": "load_mitigation_playbooks", "description": "Load the packaged mitigation playbooks used by the recommendation agent."},
             {"name": "load_seed_corpus", "description": "Inspect the packaged synthetic and historical disruption corpora."},
+            {"name": "inspect_vector_store", "description": "Inspect local-first hybrid retrieval mode and corpus sizes."},
             {"name": "inspect_runtime_state", "description": "Inspect the local runtime mode, database health, and recent persisted data."},
             {"name": "synthetic_scenarios", "description": "Return deterministic synthetic disruption scenarios."},
         ]
@@ -47,6 +51,10 @@ class ExternalDataMCP:
                 {"hub_port": "Port of Los Angeles", "region": "USA", "lat": 33.74, "lon": -118.27},
             ]
             connector = OpenMeteoConnector("mcp_weather", 0.9, hubs, FALLBACK_DIR / "open_meteo_hubs.json")
+            items = connector.fetch() if arguments.get("live", False) else connector.fallback()
+            return {"items": [item.model_dump() for item in items]}
+        if name == "fetch_freight_index":
+            connector = FreightIndexConnector("mcp_freight", 0.85, arguments.get("url"), SEED_DIR / "freightos_baltic_index.json")
             items = connector.fetch() if arguments.get("live", False) else connector.fallback()
             return {"items": [item.model_dump() for item in items]}
         if name == "load_freight_snapshot":
@@ -70,6 +78,8 @@ class ExternalDataMCP:
                 "historical_disruption_rows": sum(1 for row in historical.get("records", []) if row.get("kind") == "disruption"),
                 "synthetic_event_rows": len(synthetic),
             }
+        if name == "inspect_vector_store":
+            return {"mode": retrieval_mode(), **retriever_stats()}
         if name == "inspect_runtime_state":
             settings = get_settings()
             status = ping(settings)
@@ -87,8 +97,9 @@ class ExternalDataMCP:
                 "database_mode": database_mode(settings.resolved_database_url),
                 "database_ok": status.ok,
                 "database_status": status.detail,
-                "llm_mode": "mock" if settings.llm_is_mock else "groq",
+                "llm_mode": "mock" if settings.llm_is_mock else f"groq:{settings.groq_model}",
                 "data_dir": str(settings.data_dir),
+                "retrieval_mode": retrieval_mode(),
                 "recent_signals": signals,
                 "recent_runs": runs,
             }

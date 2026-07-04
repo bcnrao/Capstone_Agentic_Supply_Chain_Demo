@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-PRE_CLASSIFY_STEPS = ("ingestion", "input_guardrail", "seed", "news", "classify")
+PRE_CLASSIFY_STEPS = ("ingestion", "input_guardrail", "seed", "news", "weather", "classify")
 
 ROUTE_STEPS = {
     "high_path_simulation_first": ("simulate", "recommend", "output_guardrail"),
