@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,6 +74,17 @@ def local_env_path() -> Path:
     return Path.home() / ".agentic_scd" / LOCAL_ENV_FILENAME
 
 
+def should_apply_local_env_defaults() -> bool:
+    if os.getenv("AGENTIC_SCD_IGNORE_LOCAL_ENV", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False
+    return "pytest" not in sys.modules
+
+
 def read_local_env() -> dict[str, str]:
     path = local_env_path()
     if not path.exists():
@@ -85,6 +97,8 @@ def read_local_env() -> dict[str, str]:
 
 
 def apply_local_env_defaults() -> dict[str, str]:
+    if not should_apply_local_env_defaults():
+        return {}
     values = read_local_env()
     for key, value in values.items():
         os.environ.setdefault(key, value)
