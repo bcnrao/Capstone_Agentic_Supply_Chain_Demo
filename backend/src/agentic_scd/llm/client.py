@@ -10,7 +10,7 @@ def mock_completion(prompt: str) -> str:
     return f"[MOCK-LLM:{digest}] offline response for {len(prompt)} characters"
 
 
-def completion(prompt: str, *, system: str | None = None, settings: Settings | None = None, **kwargs: object) -> str:
+def completion(prompt: str, *, system: str | None = None, settings: Settings | None = None, model: str | None = None, **kwargs: object) -> str:
     settings = settings or get_settings()
     if settings.llm_is_mock:
         return mock_completion(prompt)
@@ -22,7 +22,11 @@ def completion(prompt: str, *, system: str | None = None, settings: Settings | N
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        response = client.chat.completions.create(model=settings.groq_model, messages=messages, **kwargs)
+        response = client.chat.completions.create(
+            model=model or settings.groq_model,
+            messages=messages,
+            **kwargs,
+        )
         return response.choices[0].message.content or ""
     except Exception:
         return ""
