@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from agentic_scd.agents.schema import Classification, EventAnalysis, WeatherRisk
+from agentic_scd.config.settings import DEFAULT_GROQ_MODEL
 from agentic_scd.ingestion.schema import DisruptionSignal
+from agentic_scd.llm.client import completion
 from agentic_scd.rag.retriever import history_retriever, lexical_score
 
 if TYPE_CHECKING:
@@ -24,6 +27,8 @@ HINT_BONUS = {"none": 0.0, "low": 0.5, "moderate": 1.5, "high": 2.5, "severe": 3
 TOKEN_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)?")
 HISTORY_CATEGORY_MAP = {"freight_rate": "logistics", "supply_chain_signal": "other", "runtime_signal": ""}
 DISRUPTION_CATEGORIES = set(CATEGORY_KEYWORDS) | {"other", "labor", "natural_disaster"}
+DISTILBERT_MODEL = "distilbert-base-uncased"
+MODEL_LABELS = list(CATEGORY_KEYWORDS) + ["other"]
 
 
 def tokenize(text: str) -> set[str]:
@@ -34,6 +39,92 @@ def phrase_hit(phrase: str, text: str, words: set[str]) -> bool:
     if " " in phrase or "-" in phrase:
         return phrase in text
     return phrase in words
+
+
+def normalize_model_label(label: str) -> str:
+    normalized = label.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "labour_strike": "labor_strike",
+        "labor": "labor",
+        "labour": "labor",
+        "natural_disaster": "natural_disaster",
+        "raw_materials": "raw_material",
+        "raw_material": "raw_material",
+        "supply_chain": "logistics",
+        "transport": "logistics",
+        "transportation": "logistics",
+        "shipping": "logistics",
+    }
+    return aliases.get(normalized, normalized)
+
+
+@lru_cache(maxsize=1)
+def _build_distilbert_classifier():
+    try:
+        from transformers import pipeline
+    except Exception:
+        return None
+    try:
+        return pipeline("zero-shot-classification", model=DISTILBERT_MODEL, tokenizer=DISTILBERT_MODEL)
+    except Exception:
+        return None
+
+
+def predict_with_model(text: str) -> tuple[str, float]:
+    if not text.strip():
+        return "other", 0.0
+    classifier = _build_distilbert_classifier()
+    if classifier is None:
+        return "", 0.0
+    try:
+        result = classifier(text, candidate_labels=MODEL_LABELS)
+        label = normalize_model_label(str(result["labels"][0]))
+        score = float(result["scores"][0])
+        if label not in DISRUPTION_CATEGORIES:
+            return "other", score
+        return label, score
+    except Exception:
+        return "", 0.0
+
+
+def fallback_to_groq(text: str) -> tuple[str, float]:
+    prompt = (
+        "Classify this supply-chain disruption signal into one of these categories: "
+        f"{', '.join(MODEL_LABELS)}. Return JSON with 'category' and 'confidence'.\n\nText: {text}"
+    )
+    try:
+        response = completion(
+            prompt,
+            system="Classify supply-chain disruption signals.",
+            model=DEFAULT_GROQ_MODEL,
+        )
+        if not response:
+            return "", 0.0
+        category = ""
+        confidence = 0.0
+        for token in response.replace("\n", " ").split():
+            if token.lower().startswith('"category"') or token.lower().startswith("'category'"):
+                continue
+        if "category" in response.lower() and "confidence" in response.lower():
+            for part in response.split():
+                if part.lower().startswith("category"):
+                    category = part.split(":", 1)[1].strip().strip('"').strip("'")
+                elif part.lower().startswith("confidence"):
+                    try:
+                        confidence = float(part.split(":", 1)[1].strip().rstrip(","))
+                    except ValueError:
+                        confidence = 0.0
+        if not category:
+            return "", 0.0
+        normalized = normalize_model_label(category)
+        if normalized not in DISRUPTION_CATEGORIES:
+            normalized = "other"
+        return normalized, max(0.0, min(0.99, confidence))
+    except Exception:
+        return "", 0.0
+
+
+_DEFAULT_FALLBACK_TO_GROQ = fallback_to_groq
 
 
 def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = None, weather: WeatherRisk | None = None) -> Classification:
@@ -59,6 +150,17 @@ def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = N
     hit_count = hits.get(category, 0)
     if category == "labor":
         hit_count = max(hit_count, hits.get("labor_strike", 0))
+
+    model_category, model_confidence = predict_with_model(signal.text)
+    if model_category and model_confidence >= 0.5:
+        category = model_category
+    else:
+        fallback_category, fallback_confidence = fallback_to_groq(signal.text)
+        if fallback_category and fallback_confidence >= 0.5:
+            category = fallback_category
+        elif model_category:
+            category = model_category
+
     reliability = signal.source_reliability if signal.source_reliability is not None else 0.5
     hint = str(signal.severity_hint or (analysis.severity_hint if analysis else "none")).lower()
     history_category = ""

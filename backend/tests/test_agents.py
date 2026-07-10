@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import agentic_scd.agents.classify as classify_module
 from agentic_scd.agents.classify import classify_node, classify_signal
 from agentic_scd.agents.forecast import HORIZON, aggregate_risk, forecast_node
 from agentic_scd.agents.impact import impact_node
@@ -111,3 +112,39 @@ def test_recommend_produces_actions() -> None:
     assert len(rec.actions) >= 1
     assert "freight" in " ".join(rec.actions).lower()
     assert rec.summary
+
+
+def test_selects_distilbert_when_confidence_is_low(monkeypatch: object) -> None:
+    signal = make_signal("Port strike disrupts shipping", "freight delay")
+
+    def fake_predict(text: str) -> tuple[str, float]:
+        assert text == signal.text
+        return "logistics", 0.4
+
+    monkeypatch.setattr(classify_module, "predict_with_model", fake_predict)
+    result = classify_module.classify_signal(signal)
+
+    assert result.category == "logistics"
+    assert result.confidence >= 0.0
+
+
+def test_uses_groq_fallback_when_distilbert_confidence_is_low(monkeypatch: object) -> None:
+    signal = make_signal("Port strike disrupts shipping", "freight delay")
+
+    calls: list[str] = []
+
+    def fake_predict(text: str) -> tuple[str, float]:
+        calls.append("distilbert")
+        return "other", 0.4
+
+    def fake_fallback(text: str) -> tuple[str, float]:
+        calls.append("groq")
+        return "logistics", 0.7
+
+    monkeypatch.setattr(classify_module, "predict_with_model", fake_predict)
+    monkeypatch.setattr(classify_module, "fallback_to_groq", fake_fallback)
+    result = classify_module.classify_signal(signal)
+
+    assert result.category == "logistics"
+    assert result.confidence >= 0.5
+    assert calls == ["distilbert", "groq"]
