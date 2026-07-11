@@ -4,7 +4,7 @@ import re
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from agentic_scd.agents.schema import Classification, EventAnalysis, WeatherRisk
+from agentic_scd.agents.schema import Classification, EventAnalysis, WeatherRiskAssessment
 from agentic_scd.config.settings import DEFAULT_GROQ_MODEL
 from agentic_scd.ingestion.schema import DisruptionSignal
 from agentic_scd.llm.client import completion
@@ -127,7 +127,7 @@ def fallback_to_groq(text: str) -> tuple[str, float]:
 _DEFAULT_FALLBACK_TO_GROQ = fallback_to_groq
 
 
-def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = None, weather: WeatherRisk | None = None) -> Classification:
+def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = None, weather: WeatherRiskAssessment | None = None) -> Classification:
     text = signal.text.lower()
     words = tokenize(text)
     hits = {
@@ -147,6 +147,8 @@ def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = N
         category = "labor_strike" if "labor" in words or "supplier" in words or "packaging" in words else "labor"
     elif any(term in words for term in ("defect", "quality", "recall")) or "inspection failure" in text:
         category = "quality"
+    if weather is not None and weather.aggregate_severity >= 4:
+        category = "weather"
     hit_count = hits.get(category, 0)
     if category == "labor":
         hit_count = max(hit_count, hits.get("labor_strike", 0))
@@ -180,12 +182,10 @@ def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = N
     base = 2.0 + 1.05 * hit_count + 2.0 * reliability + HINT_BONUS.get(hint, 0.0)
     if signal.source_type == "WEATHER" and category == "weather":
         base += 1.0
-    if weather is not None:
-        base += max(0.0, min(2.4, weather.severity_score / 4.0))
-        if weather.severity_score >= 6.5:
-            category = "weather"
     if category in {"weather", "labor_strike", "labor"} and hit_count >= 2:
         base += 0.8
+    if weather is not None:
+        base += round(0.5 + 1.5 * weather.port_disruption_risk, 2)
     severity = round(max(1.0, min(10.0, base)), 2)
     if category == "other":
         severity = min(severity, 3.0)
@@ -204,16 +204,18 @@ def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = N
     else:
         level = "LOW"
         route = "monitor_only"
-    weather_note = f", weather severity {weather.severity_score:.1f}" if weather is not None else ""
     history_note = f", history {history_category}" if history_category else ""
-    rationale = f"{hit_count} category keyword hits, reliability {reliability:.2f}, hint {hint}{history_note}{weather_note}"
+    rationale = f"{hit_count} category keyword hits, reliability {reliability:.2f}, hint {hint}{history_note}"
+    if weather is not None:
+        ops = ", ".join(weather.affected_operations) or "none"
+        rationale += f"; 7-day hub forecast: peak {weather.peak_day}, ops {ops}"
     return Classification(signal_id=signal.signal_id, category=category, risk_score=risk_score, severity=severity, confidence=confidence, risk_level=level, route=route, rationale=rationale)
 
 
 def classify_node(state: "GraphState") -> dict:
     analyses = {item.signal_id: item for item in state.get("event_analyses", [])}
-    weather = {item.signal_id: item for item in state.get("weather_risks", [])}
-    rows = [classify_signal(signal, analyses.get(signal.signal_id), weather.get(signal.signal_id)) for signal in state.get("new_signals", [])]
+    weather_map = {item.signal_id: item for item in state.get("weather_risks", [])}
+    rows = [classify_signal(signal, analyses.get(signal.signal_id), weather_map.get(signal.signal_id)) for signal in state.get("new_signals", [])]
     max_severity = max((row.severity for row in rows), default=0.0)
     if max_severity > 7:
         route = "HIGH severity: simulation is prioritized and mitigation is generated immediately."

@@ -1,74 +1,76 @@
+"""Weather Risk Monitoring agent (README agent #3).
+
+Runs between ``news`` and ``classify``. For each freshly ingested ``WEATHER`` signal it
+parses the packaged Open-Meteo forecast into a multi-day series and scores hub-level
+disruption risk, emitting ``WeatherRiskAssessment`` objects the classifier and impact
+mapper can lean on. Fully offline: it reads the structured payload the connector already
+persisted, never re-fetching during the pipeline.
+"""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from agentic_scd.agents.schema import EventAnalysis, WeatherRisk
+from agentic_scd.agents.schema import WeatherRiskAssessment
 from agentic_scd.ingestion.schema import DisruptionSignal
+from agentic_scd.ingestion.weather.core import (
+    operations_at_risk,
+    parse_daily_series,
+    peak_day,
+    score_hub_risk,
+    summarize_hub_forecast,
+)
 
 if TYPE_CHECKING:
     from agentic_scd.graph.state import GraphState
 
-WEATHER_TERMS = ("typhoon", "hurricane", "storm", "flood", "rain", "thunderstorm", "gale", "weather", "earthquake", "cyclone")
-SEVERITY_SCORE = {"none": 1.0, "low": 2.5, "moderate": 5.5, "high": 7.4, "severe": 9.0}
+
+def _hub_from_signal(signal: DisruptionSignal) -> dict[str, Any]:
+    payload = signal.raw_payload or {}
+    hub = payload.get("hub")
+    if isinstance(hub, dict) and hub:
+        return hub
+    location = signal.location
+    if location is not None:
+        return {
+            "hub_port": location.hub_port,
+            "region": location.region,
+            "lat": location.lat,
+            "lon": location.lon,
+        }
+    return {}
 
 
-def location_name(signal: DisruptionSignal) -> str | None:
-    if signal.location and signal.location.hub_port:
-        return signal.location.hub_port
-    text = signal.text
-    for token in ("port", "harbor", "hub"):
-        lowered = text.lower()
-        if token not in lowered:
-            continue
-        idx = lowered.find(token)
-        start = max(0, idx - 24)
-        return " ".join(text[start : idx + len(token)].split()).strip(" ,.")
-    return None
-
-
-def build_weather_risk(signal: DisruptionSignal, analysis: EventAnalysis | None = None) -> WeatherRisk | None:
-    text = signal.text.lower()
-    is_weather = signal.source_type == "WEATHER" or any(term in text for term in WEATHER_TERMS)
-    if analysis and "weather" in analysis.event_type.lower():
-        is_weather = True
-    if not is_weather:
+def assess_weather_signal(signal: DisruptionSignal) -> WeatherRiskAssessment | None:
+    """Build a hub-level risk assessment for one WEATHER signal, or None otherwise."""
+    if signal.source_type != "WEATHER":
         return None
     payload = signal.raw_payload or {}
-    response = payload.get("response", {})
-    daily = response.get("daily", {})
-    wind = (daily.get("wind_speed_10m_max") or [None])[0]
-    precip = (daily.get("precipitation_sum") or [None])[0]
-    hint = str(payload.get("severity_hint") or signal.severity_hint or (analysis.severity_hint if analysis else "moderate")).lower()
-    score = SEVERITY_SCORE.get(hint, 5.0)
-    if wind is not None:
-        score = max(score, min(9.5, 2.0 + float(wind) / 12.0))
-    if precip is not None:
-        score = max(score, min(9.5, 2.0 + float(precip) / 8.0))
-    if any(term in text for term in ("shutdown", "suspend", "flooding", "blocked", "closures")):
-        score = min(10.0, score + 0.8)
-    factor = round(min(1.0, max(0.15, score / 10.0)), 4)
-    region = signal.region or (analysis.extracted_region if analysis else None)
-    hub = location_name(signal)
-    summary = analysis.summary if analysis and analysis.summary else signal.title
-    return WeatherRisk(
+    response = payload.get("response")
+    if not isinstance(response, dict):
+        return None
+    hub = _hub_from_signal(signal)
+    days = parse_daily_series(hub, response)
+    aggregate = score_hub_risk(days)
+    peak = peak_day(days)
+    # Port disruption likelihood scales with aggregate severity on the 1-10 scale.
+    port_risk = round(min(1.0, max(0.0, (aggregate - 1.0) / 9.0)), 4)
+    return WeatherRiskAssessment(
         signal_id=signal.signal_id,
-        region=region,
-        hub=hub,
-        alert_level=hint.upper(),
-        severity_score=round(score, 2),
-        wind_kph=float(wind) if wind is not None else None,
-        precipitation_mm=float(precip) if precip is not None else None,
-        disruption_factor=factor,
-        monitoring_window_days=max(2, int(round(2 + score / 1.8))),
-        summary=summary,
+        hub_port=hub.get("hub_port"),
+        region=hub.get("region"),
+        lat=hub.get("lat"),
+        lon=hub.get("lon"),
+        horizon_days=len(days),
+        daily_forecasts=days,
+        aggregate_severity=aggregate,
+        port_disruption_risk=port_risk,
+        affected_operations=operations_at_risk(days, hub),
+        peak_day=peak.date if peak else None,
+        summary=summarize_hub_forecast(hub, days),
     )
 
 
 def weather_node(state: "GraphState") -> dict:
-    analyses = {item.signal_id: item for item in state.get("event_analyses", []) or []}
-    rows = []
-    for signal in state.get("new_signals", []) or []:
-        risk = build_weather_risk(signal, analyses.get(signal.signal_id))
-        if risk is not None:
-            rows.append(risk)
-    return {"weather_risks": rows}
+    assessments = [assess_weather_signal(signal) for signal in state.get("new_signals", [])]
+    return {"weather_risks": [item for item in assessments if item is not None]}

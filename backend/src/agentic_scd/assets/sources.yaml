@@ -24,6 +24,8 @@ sources:
     enabled: true
     reliability: 0.9
     config:
+      # Days of daily forecast to pull and analyze per hub (weather agent horizon).
+      forecast_days: 7
       # Major hubs/ports to watch for severe weather disruption.
       hubs:
         - hub_port: Port of Shanghai

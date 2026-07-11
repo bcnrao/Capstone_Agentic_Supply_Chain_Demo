@@ -111,24 +111,6 @@ def analysis_table(state: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def weather_table(state: dict) -> pd.DataFrame:
-    rows = []
-    for item in state.get("weather_risks", []) or []:
-        rows.append(
-            {
-                "region": item.region or "",
-                "hub": item.hub or "",
-                "alert_level": item.alert_level,
-                "severity_score": item.severity_score,
-                "wind_kph": item.wind_kph,
-                "precipitation_mm": item.precipitation_mm,
-                "disruption_factor": item.disruption_factor,
-                "monitoring_window_days": item.monitoring_window_days,
-            }
-        )
-    return pd.DataFrame(rows)
-
-
 def impact_table(state: dict) -> pd.DataFrame:
     rows = []
     for impact in state.get("impacts", []) or []:
@@ -139,6 +121,23 @@ def impact_table(state: dict) -> pd.DataFrame:
                 "facilities": ", ".join(impact.affected_facilities),
                 "products": ", ".join(impact.product_categories),
                 "reasoning": impact.reasoning,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def weather_table(state: dict) -> pd.DataFrame:
+    rows = []
+    for risk in state.get("weather_risks", []) or []:
+        rows.append(
+            {
+                "hub": risk.hub_port or "",
+                "region": risk.region or "",
+                "horizon_days": risk.horizon_days,
+                "aggregate_severity": risk.aggregate_severity,
+                "port_disruption_risk": risk.port_disruption_risk,
+                "peak_day": risk.peak_day or "",
+                "operations": ", ".join(risk.affected_operations),
             }
         )
     return pd.DataFrame(rows)
@@ -501,8 +500,8 @@ def build_dashboard() -> gr.Blocks:
                 refresh_inbox = gr.Button("Refresh inbox")
             with gr.Tab("News analysis"):
                 analyses = gr.Dataframe(label="Event extraction and summarization", interactive=False)
-            with gr.Tab("Weather watch"):
-                weather = gr.Dataframe(label="Weather monitoring and disruption factors", interactive=False)
+            with gr.Tab("Weather risk"):
+                weather = gr.Dataframe(label="7-day hub weather risk", interactive=False)
             with gr.Tab("Impact map"):
                 impacts = gr.Dataframe(label="Affected suppliers, lanes, and facilities", interactive=False)
             with gr.Tab("Demand forecast"):

@@ -32,6 +32,7 @@ def run(scenario_name: str | None = None, *, use_pending_signals: bool = False) 
 
 def print_summary(state: GraphState) -> None:
     signals = state.get("new_signals", [])
+    weather_risks = state.get("weather_risks", [])
     classifications = state.get("classifications", [])
     impacts = state.get("impacts", [])
     forecast = state.get("forecast")
@@ -43,6 +44,12 @@ def print_summary(state: GraphState) -> None:
     for signal in signals:
         region = f" ({signal.region})" if signal.region else ""
         print(f"  - [{signal.source_type}] {signal.title}{region}")
+    if weather_risks:
+        print("\nWeather hub risks")
+        for risk in weather_risks:
+            hub = risk.hub_port or risk.region or "hub"
+            ops = ", ".join(risk.affected_operations) or "none"
+            print(f"  - {hub}: severity {risk.aggregate_severity:.1f}/10 over {risk.horizon_days}d, peak {risk.peak_day}, port risk {risk.port_disruption_risk:.0%}, ops {ops}")
     print("\nRisk classification")
     for row in classifications:
         print(f"  - {row.category}: severity {row.severity:.1f}/10, risk {row.risk_score:.2f}, {row.risk_level}, confidence {row.confidence:.2f}")

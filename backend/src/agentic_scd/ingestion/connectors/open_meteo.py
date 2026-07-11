@@ -7,52 +7,53 @@ from typing import Any
 import httpx
 
 from agentic_scd.ingestion.connectors.base import RawItem, SourceType
+from agentic_scd.ingestion.weather.core import (
+    DAILY,
+    WMO,
+    parse_daily_series,
+    peak_day,
+    summarize_hub_forecast,
+)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-DAILY = "weather_code,wind_speed_10m_max,precipitation_sum"
-WMO: dict[int, tuple[str, str]] = {
-    0: ("clear sky", "none"),
-    1: ("mainly clear", "none"),
-    2: ("partly cloudy", "none"),
-    3: ("overcast", "none"),
-    45: ("fog", "low"),
-    61: ("rain", "low"),
-    63: ("heavy rain causing flood risk", "moderate"),
-    65: ("heavy rain and flooding disruption", "severe"),
-    71: ("snowfall", "moderate"),
-    75: ("heavy snow storm", "severe"),
-    82: ("violent storm with flooding", "severe"),
-    95: ("thunderstorm", "severe"),
-    99: ("severe thunderstorm with gale-force wind", "severe"),
-}
+DEFAULT_FORECAST_DAYS = 7
+
+__all__ = ["FORECAST_URL", "DAILY", "WMO", "OpenMeteoConnector"]
 
 
 class OpenMeteoConnector:
     source_type = SourceType.WEATHER
 
-    def __init__(self, name: str, reliability: float, hubs: list[dict[str, Any]], fallback_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        reliability: float,
+        hubs: list[dict[str, Any]],
+        fallback_path: Path | None = None,
+        forecast_days: int = DEFAULT_FORECAST_DAYS,
+    ) -> None:
         self.name = name
         self.reliability = reliability
         self.hubs = list(hubs)
         self.fallback_path = fallback_path
+        self.forecast_days = forecast_days
 
     @staticmethod
     def hub_item(hub: dict[str, Any], response: dict[str, Any]) -> RawItem:
-        daily = response.get("daily", {})
-        code = int((daily.get("weather_code") or [0])[0])
-        wind = (daily.get("wind_speed_10m_max") or [None])[0]
-        precip = (daily.get("precipitation_sum") or [None])[0]
-        phrase, hint = WMO.get(code, ("unsettled weather", "low"))
+        days = parse_daily_series(hub, response)
+        peak = peak_day(days)
+        phrase = peak.phrase if peak else "unsettled weather"
+        hint = peak.severity_hint if peak else "low"
         place = hub.get("hub_port") or hub.get("region") or "configured hub"
-        body = f"Forecast {phrase} at {place}. Max wind {wind} km/h and precipitation {precip} mm."
+        body = summarize_hub_forecast(hub, days)
         if hint in {"moderate", "severe"}:
             body += " Conditions may disrupt port and shipping operations."
         return RawItem(
             title=f"Weather forecast for {place}: {phrase}",
             body=body,
-            published=(daily.get("time") or [None])[0],
+            published=days[0].date if days else None,
             location={"region": hub.get("region"), "lat": hub.get("lat"), "lon": hub.get("lon"), "hub_port": hub.get("hub_port")},
-            payload={"hub": hub, "response": response, "severity_hint": hint},
+            payload={"hub": hub, "response": response, "severity_hint": hint, "horizon_days": len(days)},
         )
 
     def fetch(self) -> list[RawItem]:
@@ -61,7 +62,7 @@ class OpenMeteoConnector:
             for hub in self.hubs:
                 response = client.get(
                     FORECAST_URL,
-                    params={"latitude": hub["lat"], "longitude": hub["lon"], "daily": DAILY, "forecast_days": 1},
+                    params={"latitude": hub["lat"], "longitude": hub["lon"], "daily": DAILY, "forecast_days": self.forecast_days},
                 )
                 response.raise_for_status()
                 items.append(self.hub_item(hub, response.json()))
