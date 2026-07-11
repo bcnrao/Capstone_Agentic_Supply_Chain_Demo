@@ -35,7 +35,13 @@ def build_rss(entry: dict[str, Any]) -> RssConnector:
 
 def build_open_meteo(entry: dict[str, Any]) -> OpenMeteoConnector:
     cfg = entry.get("config", {})
-    return OpenMeteoConnector(entry["name"], entry["reliability"], cfg.get("hubs", []), resolve_path(entry.get("fallback_path")))
+    return OpenMeteoConnector(
+        entry["name"],
+        entry["reliability"],
+        cfg.get("hubs", []),
+        resolve_path(entry.get("fallback_path")),
+        forecast_days=cfg.get("forecast_days", 7),
+    )
 
 
 def build_synthetic(entry: dict[str, Any]) -> SyntheticConnector:

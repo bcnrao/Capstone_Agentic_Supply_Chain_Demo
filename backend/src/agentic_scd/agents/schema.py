@@ -12,19 +12,6 @@ class EventAnalysis(BaseModel):
     summary: str = ""
 
 
-class WeatherRisk(BaseModel):
-    signal_id: str
-    region: str | None = None
-    hub: str | None = None
-    alert_level: str = "NONE"
-    severity_score: float = Field(default=0.0, ge=0, le=10)
-    wind_kph: float | None = None
-    precipitation_mm: float | None = None
-    disruption_factor: float = Field(default=0.0, ge=0, le=1)
-    monitoring_window_days: int = 0
-    summary: str = ""
-
-
 class Classification(BaseModel):
     signal_id: str
     category: str
@@ -111,3 +98,27 @@ class Recommendation(BaseModel):
     summary: str = ""
     evidence: list[str] = Field(default_factory=list)
     generation_mode: str = "deterministic"
+
+
+class DailyWeatherDay(BaseModel):
+    date: str
+    weather_code: int
+    phrase: str
+    wind_kmh_max: float | None = None
+    precipitation_mm: float | None = None
+    severity_hint: str = "none"  # none | low | moderate | severe
+
+
+class WeatherRiskAssessment(BaseModel):
+    signal_id: str
+    hub_port: str | None = None
+    region: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    horizon_days: int = 0
+    daily_forecasts: list[DailyWeatherDay] = Field(default_factory=list)
+    aggregate_severity: float = Field(default=0.0, ge=0, le=10)
+    port_disruption_risk: float = Field(default=0.0, ge=0, le=1)
+    affected_operations: list[str] = Field(default_factory=list)
+    peak_day: str | None = None
+    summary: str = ""

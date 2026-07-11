@@ -3,12 +3,20 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from agentic_scd.agents.schema import Classification, ImpactMap
+from agentic_scd.agents.schema import Classification, ImpactMap, WeatherRiskAssessment
 from agentic_scd.ingestion.schema import DisruptionSignal
 from agentic_scd.rag.retriever import impact_retriever
 
 if TYPE_CHECKING:
     from agentic_scd.graph.state import GraphState
+
+# Trade lanes served out of each monitored weather hub, used to ground a weather
+# disruption to the parts of our network it most directly threatens.
+HUB_LANES = {
+    "Port of Shanghai": ["Shanghai-Los Angeles"],
+    "Port of Rotterdam": ["Mumbai-Rotterdam", "Rotterdam-New York"],
+    "Port of Los Angeles": ["Los Angeles-Dallas"],
+}
 
 CATEGORY_HINTS = {
     "weather": ["port", "warehouse", "Sea"],
@@ -46,7 +54,7 @@ def fallback_signal(classification: Classification) -> DisruptionSignal:
     return DisruptionSignal(signal_id=classification.signal_id, source="classification", source_type="SYNTHETIC", fetched_at=datetime.now(UTC), title=classification.category)
 
 
-def map_impact(signal: DisruptionSignal, classification: Classification) -> ImpactMap:
+def map_impact(signal: DisruptionSignal, classification: Classification, weather: WeatherRiskAssessment | None = None) -> ImpactMap:
     query_parts = [signal.text, classification.category]
     query_parts.extend(CATEGORY_HINTS.get(classification.category, []))
     if signal.region:
@@ -79,6 +87,8 @@ def map_impact(signal: DisruptionSignal, classification: Classification) -> Impa
         lanes = base.affected_lanes
     if not facilities:
         facilities = base.affected_facilities
+    if weather is not None and classification.category == "weather" and weather.hub_port in HUB_LANES:
+        lanes = HUB_LANES[weather.hub_port] + lanes
     reasoning = f"Mapped {classification.category} risk to {len(suppliers)} supplier(s), {len(lanes)} lane(s), and {len(facilities)} facility node(s)."
     return ImpactMap(
         signal_id=signal.signal_id,
@@ -93,10 +103,11 @@ def map_impact(signal: DisruptionSignal, classification: Classification) -> Impa
 
 def impact_node(state: "GraphState") -> dict:
     signals = {signal.signal_id: signal for signal in state.get("new_signals", [])}
+    weather_map = {item.signal_id: item for item in state.get("weather_risks", [])}
     impacts = []
     for item in state.get("classifications", []):
         if item.severity < 3:
             continue
         signal = signals.get(item.signal_id)
-        impacts.append(map_impact(signal, item) if signal else default_impact(item))
+        impacts.append(map_impact(signal, item, weather_map.get(item.signal_id)) if signal else default_impact(item))
     return {"impacts": impacts}
