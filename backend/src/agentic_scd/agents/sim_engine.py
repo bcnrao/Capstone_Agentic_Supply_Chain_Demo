@@ -1,4 +1,4 @@
-"""SimPy discrete-event simulation engine — Phase 6 implementation.
+"""SimPy discrete-event simulation engine implementation.
 
 Replaces the heap-queue prototype with a proper SimPy 4-node supply chain
 model: Supplier → Port → Warehouse → Retailer.
