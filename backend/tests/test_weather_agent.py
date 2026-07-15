@@ -77,11 +77,32 @@ def test_weather_node_ignores_non_weather_signals() -> None:
 
 
 def test_classify_severity_boosted_by_weather() -> None:
-    signal = weather_signal(shanghai_row())
+    # Use hint=low and lower reliability so the plain severity stays well
+    # below 10.0, leaving headroom for the weather boost to be visible.
+    # (The original test used hint=severe which already saturates at 10.0.)
+    row = shanghai_row()
+    hub = row["hub"]
+    from datetime import UTC, datetime
+    from agentic_scd.ingestion.schema import DisruptionSignal, Location
+    signal = DisruptionSignal(
+        signal_id="wx-boost-test",
+        source="open_meteo",
+        source_type="WEATHER",
+        source_reliability=0.5,
+        fetched_at=datetime.now(UTC),
+        title=f"Weather forecast for {hub['hub_port']}",
+        raw_text="",
+        location=Location(**hub),
+        severity_hint="low",
+        raw_payload={"hub": hub, "response": row["response"]},
+    )
     risks = weather_node({"new_signals": [signal]})["weather_risks"]
 
     boosted = classify_node({"new_signals": [signal], "weather_risks": risks})["classifications"][0]
-    plain = classify_node({"new_signals": [signal]})["classifications"][0]
+    plain   = classify_node({"new_signals": [signal]})["classifications"][0]
 
     assert boosted.category == "weather"
-    assert boosted.severity > plain.severity
+    assert boosted.severity > plain.severity, (
+        f"Weather boost not visible: plain={plain.severity} boosted={boosted.severity}. "
+        "Hint and reliability must keep plain severity below 10.0 so boost has headroom."
+    )
