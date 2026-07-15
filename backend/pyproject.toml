@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 agentic-scd = "agentic_scd.__main__:main"
+agentic-scd-api = "agentic_scd.api.app:main"
 agentic-scd-collect = "agentic_scd.ingestion.collect:main"
 agentic-scd-batch = "agentic_scd.ingestion.batch_cli:main"
 agentic-scd-ingest = "agentic_scd.ingestion.service:main"

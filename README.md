@@ -78,15 +78,18 @@ repo-root/
 │   ├── notebooks/  tests/  scripts/  data/
 │   ├── pyproject.toml  uv.lock
 │   └── Dockerfile  .dockerignore
-├── docker-compose.yml      # orchestrates the stack (postgres + the app container)
+├── frontend/               # the React + TypeScript + Ant Design product UI (Vite)
+│   ├── src/                #   api client, hooks, types, tabs/components
+│   └── Dockerfile  nginx.conf
+├── docker-compose.yml      # orchestrates the stack (postgres + app + api + frontend)
 ├── .env / .env.example     # shared config (DB creds, API keys)
 └── README.md
 ```
 
 **Where to run what:** the Python project lives in **`backend/`** — run `uv` and
-`scripts/` commands from there (`cd backend`). `docker-compose.yml` and `.env` live at the
-**repo root** — run `docker compose` from the root. (A future `frontend/` React app will
-sit alongside `backend/`.)
+`scripts/` commands from there (`cd backend`). The React app lives in **`frontend/`** — run
+`npm` commands from there (`cd frontend`). `docker-compose.yml` and `.env` live at the
+**repo root** — run `docker compose` from the root.
 
 ## Quick start
 
@@ -98,14 +101,28 @@ a run mode (CLI, Gradio, or Jupyter).
 ### Running with Docker
 
 The fastest path — **the only prerequisite is Docker** (Desktop on Windows/Mac, Engine on
-Linux; works the same in **GitHub Codespaces**). `docker compose` brings up Postgres plus
-an `app` container (Python 3.11 + uv + the project, deps preinstalled) and leaves it idle.
+Linux; works the same in **GitHub Codespaces**). `docker compose` brings up Postgres, the
+**FastAPI** service (`api`), the **React + Ant Design** product UI (`frontend`), and an
+idle `app` container (Python 3.11 + uv + the project, deps preinstalled) that you exec run
+modes into.
 
 ```bash
 cp .env.example .env          # Compose reads it; GROQ_API_KEY can stay empty (offline)
-docker compose up -d          # build + start postgres and the idle app (first run builds)
-docker compose ps             # postgres "healthy", app "running"
+docker compose up -d          # build + start postgres, api, frontend, and the idle app
+docker compose ps             # postgres "healthy"; api, frontend, app "running"
 ```
+
+Once up, open the product UI and the API docs:
+
+```text
+http://localhost:3000         # React + Ant Design dashboard (calls the API)
+http://localhost:8000/docs    # FastAPI interactive docs
+```
+
+The React UI has full parity with the Gradio dashboard (executive overview, risk monitor,
+news analysis, weather risk, impact map, demand forecast, simulation, mitigation, trace
+JSON, ask-the-KB, and the config panel). Gradio is still available as the internal
+dashboard by exec-ing it into the idle `app` container (see below).
 
 Optionally load some signals into the DB (otherwise a synthetic seed is used at run time):
 
@@ -615,7 +632,16 @@ curl -X POST http://127.0.0.1:8000/run \
 curl -X POST http://127.0.0.1:8000/collect
 curl http://127.0.0.1:8000/runs
 curl http://127.0.0.1:8000/signals
+curl http://127.0.0.1:8000/scenarios
+curl -X POST http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Which lanes are exposed to Shanghai weather disruption?"}'
+curl http://127.0.0.1:8000/config
 ```
+
+The API also serves the React product UI: it enables CORS for the UI origins and exposes
+`/scenarios`, `/ask`, and `GET`/`POST` `/config` so the React app has full parity with the
+Gradio dashboard.
 
 Push a synthetic supplier event through the webhook:
 
@@ -635,6 +661,26 @@ Then run:
 ```bash
 agentic-scd
 ```
+
+## React frontend (product UI)
+
+The product-facing dashboard is a **React + TypeScript + Ant Design** app in `frontend/`,
+built with Vite and calling the FastAPI service. It mirrors the Gradio tabs (executive
+overview, risk monitor, news analysis, weather risk, impact map, demand forecast,
+simulation, mitigation, trace JSON, ask-the-KB) plus the config panel.
+
+Run it in dev against a locally running API (`agentic-scd-api` on `:8000`):
+
+```bash
+cd frontend
+npm install                   # first time only
+npm run dev                   # Vite dev server -> http://localhost:3000
+```
+
+The API base URL is read from `VITE_API_BASE_URL` (see `frontend/.env`, default
+`http://localhost:8000`). Build a static bundle with `npm run build` (output in
+`frontend/dist/`). Under Docker Compose the UI is served by nginx on
+`http://localhost:3000` automatically — no manual steps needed.
 
 ## Ingestion service
 
@@ -733,13 +779,18 @@ mkdir -p .agentic_scd
 docker compose up --build
 ```
 
-Then open:
+Then open the product UI or the API docs:
 
 ```text
-http://127.0.0.1:7860
+http://localhost:3000         # React + Ant Design dashboard
+http://localhost:8000/docs    # FastAPI interactive docs
 ```
 
-The Docker image uses the same SQLite-backed local runtime and persists data in the `.agentic_scd` folder mounted from the host.
+Compose starts Postgres, the FastAPI `api` service, the React `frontend`, and an idle
+`app` container. The Gradio dashboard remains available by exec-ing it into the idle
+container (`docker compose exec app uv run agentic-scd-dashboard`, then open
+`http://localhost:7860`). The app image persists data in the `.agentic_scd` folder mounted
+from the host.
 
 ## A typical demo flow
 

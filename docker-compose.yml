@@ -1,10 +1,14 @@
-# Dev infrastructure: a local Postgres plus an idle `app` container (Python 3.11 + uv +
-# the project). `docker compose up` brings the infrastructure up but starts NO run mode;
-# you then exec the mode you want (CLI / Gradio / Jupyter). See the README "Quick start".
-# Values are read from the project-root `.env` (Compose loads it automatically).
+# Dev + demo stack: a local Postgres, an idle `app` container (Python 3.11 + uv + the
+# project), the FastAPI service (`api` -> localhost:8000), and the React + Ant Design
+# product UI (`frontend` -> localhost:3000). `docker compose up` starts postgres, the
+# API, and the React UI; the `app` container stays idle so you can still exec the Gradio
+# dashboard or Jupyter into it. Values are read from the project-root `.env` (Compose
+# loads it automatically).
 #
-#   docker compose up -d                 # build + start postgres and the idle app
+#   docker compose up -d                 # build + start postgres, api, frontend, idle app
 #   docker compose up -d postgres        # just the database (local `uv` workflow)
+#   # -> React UI:   http://localhost:3000   (product-facing, calls the API)
+#   # -> FastAPI:    http://localhost:8000/docs
 #   docker compose exec app uv run agentic-scd            # CLI run
 #   docker compose exec app uv run agentic-scd-dashboard  # Gradio -> localhost:7860
 #   docker compose exec app uv run jupyter lab --ip 0.0.0.0  # Jupyter -> localhost:8888
@@ -58,6 +62,50 @@ services:
       - ./backend/tests:/app/tests
     # Idle so the infra is "up" but no run mode is chosen for you (exec one in).
     command: ["sleep", "infinity"]
+    restart: unless-stopped
+
+  # FastAPI service wrapping the LangGraph pipeline. Reuses the app image and runs
+  # `agentic-scd-api`, binding 0.0.0.0 so localhost:8000 is reachable from the host
+  # and from the React UI. This is what the product-facing frontend calls.
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: agentic_scd_app
+    container_name: agentic_scd_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-agentic}:${POSTGRES_PASSWORD:-agentic}@postgres:5432/${POSTGRES_DB:-agentic_scd}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      USE_MOCK_LLM: ${USE_MOCK_LLM:-false}
+      # Bind uvicorn to 0.0.0.0 so the published port is reachable from the host.
+      API_HOST: 0.0.0.0
+    ports:
+      - "8000:8000"   # FastAPI (also serves /docs)
+    volumes:
+      # Live edits mirror the app container so the API reloads the same source.
+      - ./backend/src:/app/src
+    command: ["uv", "run", "agentic-scd-api"]
+    restart: unless-stopped
+
+  # React + Ant Design product UI, built with Vite and served by nginx. VITE_API_BASE_URL
+  # is baked in at build time and must be reachable from the browser, so it points at the
+  # host-published API port (localhost:8000), not the internal compose hostname.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    image: agentic_scd_frontend
+    container_name: agentic_scd_frontend
+    depends_on:
+      - api
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"     # React UI (3000 often taken by Grafana)
     restart: unless-stopped
 
 volumes:
