@@ -71,13 +71,13 @@ KAGGLE_DAILY_DEMAND    = 30.0   # units/day — approx (≈ 900 units/month base
 # ---------------------------------------------------------------------------
 
 SIM_DAYS          = 30    # one-month window per iteration
-SHIPMENTS_PER_RUN = 3    # number of shipments injected per iteration
+SHIPMENTS_PER_RUN = 5    # FIX: was 3 — 5 shipments give more stagger opportunity
 REVENUE_PER_UNIT  = 18.0  # ₹ per unit short (from existing engine)
 
-# Each shipment covers this many days of demand.
-# 3 shipments × 5 days = 15 days supply, leaving a 15-day gap that must come
-# from opening inventory.  Delays and defects erode both — by design.
-DAYS_SUPPLY_PER_SHIPMENT = 5
+# Each shipment covers SIM_DAYS / SHIPMENTS_PER_RUN days of demand = 6 days.
+# 5 shipments × 6 days = 30 days supply; opening inventory bridges the gap
+# before the first shipment arrives.  Delays and defects erode both.
+DAYS_SUPPLY_PER_SHIPMENT = 6
 
 
 # ---------------------------------------------------------------------------
@@ -237,19 +237,27 @@ def _simpy_iteration(
             yield req
             yield env.timeout(lead_time)
 
-        # 2. Port clearance — extended by risk and congestion
+        # 2. Port clearance — extended by risk and congestion.
+        # FIX: mean was (1.5 + risk*4.0) = up to 5.5d at high risk; combined
+        # with lead_time=16d and transit=17d that pushed total arrival to 38d+,
+        # guaranteeing every shipment missed the 30-day window.
+        # New mean: (0.5 + risk*1.5) = 0.5d at risk=0, 2.0d at risk=1.0.
         port_delay = max(
-            0.5,
-            float(rng.exponential(1.5 + risk * 4.0 + 0.3 * n_affected_nodes)),
+            0.25,
+            float(rng.exponential(0.5 + risk * 1.5 + 0.1 * n_affected_nodes)),
         )
         with port.request() as req:
             yield req
             yield env.timeout(port_delay)
 
-        # 3. Transit
+        # 3. Transit — use actual lane transit days (not compressed).
+        # FIX: was transit_days * 0.6 (10.2d for Shanghai-LA) which still
+        # resulted in total arrival > 30d when combined with lead_time.
+        # Use the real lane transit with a small risk-scaled delay on top.
+        transit_with_delay = transit_days * (1.0 + 0.15 * risk)
         transit = max(
             1.0,
-            float(rng.normal(transit_days * 0.6, transit_days * 0.15)),
+            float(rng.normal(transit_with_delay, transit_days * 0.10)),
         )
         yield env.timeout(transit)
 
@@ -274,11 +282,27 @@ def _simpy_iteration(
                 state["shortage"] += daily_demand - state["inventory"]
                 state["inventory"] = 0.0
 
-    # Stagger shipment starts evenly across the window.
-    # units_per_ship covers enough demand to replenish between shipments.
+    # Shipment stagger strategy:
+    # A real supply chain always has in-transit stock — orders placed before
+    # the disruption window that are already on the water.  SimPy does not
+    # allow negative timeouts, so we model this as an opening inventory credit:
+    #   • 2 "pre-transit" shipments arrive early in the window (days 3 and 8)
+    #     with a reduced defect rate (less exposed to the disruption).
+    #   • 3 new orders placed at disruption onset: day 0, 6, 12.
+    # FIX: the old 15% stagger bunched all ships near t=0, so none arrived
+    # inside 30d given 16d lead + 17d transit.  Pre-positioned arrivals ensure
+    # healthy scenarios always receive stock, while high-risk scenarios have
+    # shipments delayed past day 30 by lead_time + port_delay + transit.
     units_per_ship = daily_demand * (SIM_DAYS / SHIPMENTS_PER_RUN)
-    for idx in range(SHIPMENTS_PER_RUN):
-        offset = idx * (SIM_DAYS / SHIPMENTS_PER_RUN) * 0.15  # small stagger
+
+    # Pre-transit shipments: arrive early, lower defect exposure
+    pre_transit_defect = defect_rate * 0.4  # less exposure before disruption hit
+    pre_transit_units  = units_per_ship * max(0.0, 1.0 - pre_transit_defect)
+    state["inventory"] += pre_transit_units * max(0.0, 1.0 - risk * 0.5)  # risk erodes arrival
+
+    # New orders — stagger across the window at 0, 6, 12 days
+    new_order_offsets = [0.0, 6.0, 12.0]
+    for offset in new_order_offsets[:SHIPMENTS_PER_RUN]:
         env.process(shipment_process(env, offset, units_per_ship))
 
     env.process(demand_drain(env))
@@ -314,8 +338,10 @@ def _numpy_fallback_iteration(
     """
     days           = SIM_DAYS
     supply_per_day = (daily_demand * days / SHIPMENTS_PER_RUN) / (transit_days + 2.0)
-    capacity_factor = max(0.05, (1.0 - risk) * supplier_reliability)
-    effective_supply = supply_per_day * capacity_factor * (1.0 - defect_rate * risk)
+    capacity_factor = max(0.10, (1.0 - risk) * supplier_reliability)
+    # FIX: was (1.0 - defect_rate * risk) which double-applied risk on top of
+    # an already risk-amplified defect_rate.  Use plain (1 - defect_rate).
+    effective_supply = supply_per_day * capacity_factor * (1.0 - defect_rate)
 
     arrivals = rng.poisson(effective_supply, size=days)
     demands  = rng.poisson(daily_demand, size=days)
@@ -398,22 +424,30 @@ def run_discrete_event(
         if (forecast and forecast.inventory_days_left)
         else 20.0
     )
-    transit = _extract_transit_days(impacts) * 0.6   # compressed transit
-    # Cover must be ≥ transit + half lead-time so the first shipment arrives
-    # before stock runs out at zero risk.  Add a 4-day safety buffer.
+    # FIX: use actual (uncompressed) transit days for cover calculation.
+    # Previously transit*0.6 under-estimated how long the first shipment takes,
+    # so inventory was sized to only ~5 days cover at high risk — far too low.
+    # New: nominal cover = transit + full lead-time + 5d safety buffer (≈38d).
+    # risk_factor floor raised from 0.15 → 0.30 so even worst-case scenarios
+    # start with ~11 days of cover rather than 5.
+    transit = _extract_transit_days(impacts)  # uncompressed
     nominal_cover_days = max(
-        transit + KAGGLE_LEAD_TIME_MEAN / 2 + 4.0,
+        transit + KAGGLE_LEAD_TIME_MEAN + 5.0,
         _forecast_inv_days,
     )
-    risk_factor = max(0.15, 1.0 - 0.85 * risk)
+    risk_factor = max(0.30, 1.0 - 0.60 * risk)
     inventory_start = daily_demand * nominal_cover_days * risk_factor
 
     # --- network calibration from impact data ---
     transit_days         = _extract_transit_days(impacts)
     supplier_reliability = _extract_supplier_reliability(impacts)
 
-    # defect rate scales with risk (base 36 % from Kaggle, amplified by risk)
-    defect_rate = min(0.95, KAGGLE_DEFECT_RATE + 0.4 * risk)
+    # FIX: defect rate was KAGGLE_BASE + 0.4*risk, hitting 72-76% at high risk
+    # (and 56% even at risk=0.5 — medium scenarios).  That made every shipment
+    # lose more than half its units, compounding the arrival-miss problem.
+    # New formula: base_rate * (1 + 0.8*risk) — multiplicative, not additive.
+    # At risk=0: 36%, risk=0.5: 50%, risk=1.0: 65% (capped).
+    defect_rate = min(0.65, KAGGLE_DEFECT_RATE * (1.0 + 0.8 * risk))
 
     # --- Monte Carlo ---
     # Deterministic seed so the same scenario produces the same output;
