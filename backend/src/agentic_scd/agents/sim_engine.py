@@ -70,14 +70,15 @@ KAGGLE_DAILY_DEMAND    = 30.0   # units/day — approx (≈ 900 units/month base
 # Simulation window
 # ---------------------------------------------------------------------------
 
-SIM_DAYS          = 30    # one-month window per iteration
-SHIPMENTS_PER_RUN = 5    # FIX: was 3 — 5 shipments give more stagger opportunity
+SIM_DAYS          = 90    # quarterly window — long enough for 16d lead + 17d transit to deliver
+SHIPMENTS_PER_RUN = 8    # 8 shipments across 90d = one every ~11d; enough for gradient
 REVENUE_PER_UNIT  = 18.0  # ₹ per unit short (from existing engine)
 
-# Each shipment covers SIM_DAYS / SHIPMENTS_PER_RUN days of demand = 6 days.
-# 5 shipments × 6 days = 30 days supply; opening inventory bridges the gap
-# before the first shipment arrives.  Delays and defects erode both.
-DAYS_SUPPLY_PER_SHIPMENT = 6
+# Each shipment covers SIM_DAYS / SHIPMENTS_PER_RUN days of demand = ~11 days.
+# 8 shipments × 11 days = 90 days supply (before defects and delays).
+# At high risk, defects + delays erode many of these → realistic shortfall.
+# At low risk, most arrive on time with low defect losses → low/zero shortage.
+DAYS_SUPPLY_PER_SHIPMENT = 11
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +203,13 @@ def _simpy_iteration(
     import simpy  # noqa: PLC0415 — imported after availability check
 
     # --- node capacities ---
-    supplier_cap = max(1, int(3 * (1 - risk) * supplier_reliability))
+    # Supplier capacity: risk-scaled parallel slots.
+    # At risk=0: 8 concurrent orders (full throughput).
+    # At risk=0.74: max(2, int(8*0.556))=4 concurrent (partial shutdown).
+    # At risk=1.0: 2 concurrent (skeleton crew).
+    # Ships beyond capacity queue, creating realistic cascade delays at high risk
+    # without the extreme serialisation (cap=1) that pushed all ships past day 90.
+    supplier_cap = max(2, int(SHIPMENTS_PER_RUN * (1.0 - risk * 0.60)))
     port_cap     = max(1, int(5 * (1 - risk * 0.7)))
 
     env       = simpy.Environment()
@@ -225,13 +232,16 @@ def _simpy_iteration(
 
         t_start = env.now
 
-        # 1. Supplier processing — scaled by lead time, compressed by capacity
+        # 1. Supplier processing — full lead time per order.
+        # supplier_cap controls how many orders run concurrently (queueing),
+        # not how fast each individual order processes.  Dividing lead_time
+        # by supplier_cap made ships arrive unrealistically fast (3d at cap=5)
+        # while the inventory formula assumed the full 16d — a mismatch that
+        # caused 0% stockout.  Each order takes the dataset lead time regardless
+        # of how many other orders are in flight.
         lead_time = max(
             0.5,
-            float(rng.normal(
-                KAGGLE_LEAD_TIME_MEAN / max(1, supplier_cap),
-                KAGGLE_LEAD_TIME_STD / max(1, supplier_cap),
-            )),
+            float(rng.normal(KAGGLE_LEAD_TIME_MEAN, KAGGLE_LEAD_TIME_STD)),
         )
         with supplier.request() as req:
             yield req
@@ -306,9 +316,12 @@ def _simpy_iteration(
     pre_transit_units  = units_per_ship * max(0.0, 1.0 - pre_transit_defect)
     state["inventory"] += pre_transit_units * (1.0 - risk) ** 2
 
-    # New orders — stagger across the window at 0, 6, 12 days
-    new_order_offsets = [0.0, 6.0, 12.0]
-    for offset in new_order_offsets[:SHIPMENTS_PER_RUN]:
+    # 8 new-order ships staggered at 0, 8, 16 … 56 days.
+    # First ship (offset=0): ETA = lead_t + port_delay + transit ≈ 36d → arrives ~day 36.
+    # Ships 3-7 (offset 16-56d): ETA ≈ 52-92d → most arrive before day 90 at medium risk.
+    # At high risk (heavy delays), later ships miss the window → realistic shortage.
+    new_order_offsets = [float(i * 8) for i in range(SHIPMENTS_PER_RUN)]
+    for offset in new_order_offsets:
         env.process(shipment_process(env, offset, units_per_ship))
 
     env.process(demand_drain(env))
@@ -414,51 +427,46 @@ def run_discrete_event(
     n_iters   = max(1, iterations)
 
     # --- demand calibration ---
+    # forecast.baseline is a list of weekly demand values; mean gives weekly demand.
+    # Divide by 7 to get daily, then the simulation drains daily_demand per day.
     if forecast and forecast.baseline:
-        baseline_demand = float(np.mean(forecast.baseline))
+        baseline_demand = float(np.mean(forecast.baseline)) / 7.0
     else:
-        baseline_demand = KAGGLE_DAILY_DEMAND * SIM_DAYS   # monthly baseline
+        baseline_demand = KAGGLE_DAILY_DEMAND  # 30 units/day
 
     if forecast and forecast.adjusted:
-        adjusted_demand = float(np.mean(forecast.adjusted))
+        adjusted_demand = float(np.mean(forecast.adjusted)) / 7.0
     else:
         adjusted_demand = baseline_demand * max(0.0, 1.0 - 0.18 * risk)
 
-    daily_demand = max(1.0, adjusted_demand / SIM_DAYS)
+    daily_demand = max(1.0, adjusted_demand)
 
-    # opening inventory — must cover the replenishment lead time at zero risk
-    # so healthy scenarios don't show false stockouts.
-    # Base = transit_days + lead_time (≈ 10 + 8 = 18 days of demand) at risk=0.
-    # Risk erodes it: at risk=1.0, only 15 % of safety stock remains.
+    # opening inventory - sized to bridge the gap until the first shipment
+    # arrives, plus a risk-scaled safety buffer.
+    # first_ship_ETA uses full lead_time (ship0 gets a supplier slot immediately
+    # since supplier_cap >= 2).  safety_buffer: +8d at risk=0, +0d at risk=1.0.
     _forecast_inv_days = (
         max(1.0, forecast.inventory_days_left)
         if (forecast and forecast.inventory_days_left)
-        else 20.0
+        else 25.0
     )
-    # FIX: use actual (uncompressed) transit days for cover calculation.
-    # Previously transit*0.6 under-estimated how long the first shipment takes,
-    # so inventory was sized to only ~5 days cover at high risk — far too low.
-    # New: nominal cover = transit + full lead-time + 5d safety buffer (≈38d).
-    # risk_factor floor raised from 0.15 → 0.30 so even worst-case scenarios
-    # start with ~11 days of cover rather than 5.
-    transit = _extract_transit_days(impacts)  # uncompressed
-    nominal_cover_days = max(
-        transit + KAGGLE_LEAD_TIME_MEAN + 5.0,
-        _forecast_inv_days,
-    )
-    risk_factor = max(0.30, 1.0 - 0.60 * risk)
-    inventory_start = daily_demand * nominal_cover_days * risk_factor
+    transit            = _extract_transit_days(impacts)
+    port_delay_mean    = 0.5 + risk * 1.5
+    transit_risk       = transit * (1.0 + 0.15 * risk)
+    first_ship_eta     = KAGGLE_LEAD_TIME_MEAN + port_delay_mean + transit_risk
+    safety_buffer      = 8.0 * (1.0 - risk)
+    nominal_cover_days = max(first_ship_eta + safety_buffer, _forecast_inv_days)
+    inventory_start    = daily_demand * nominal_cover_days
 
     # --- network calibration from impact data ---
     transit_days         = _extract_transit_days(impacts)
     supplier_reliability = _extract_supplier_reliability(impacts)
 
-    # FIX: defect rate was KAGGLE_BASE + 0.4*risk, hitting 72-76% at high risk
-    # (and 56% even at risk=0.5 — medium scenarios).  That made every shipment
-    # lose more than half its units, compounding the arrival-miss problem.
-    # New formula: base_rate * (1 + 0.8*risk) — multiplicative, not additive.
-    # At risk=0: 36%, risk=0.5: 50%, risk=1.0: 65% (capped).
-    defect_rate = min(0.65, KAGGLE_DEFECT_RATE * (1.0 + 0.8 * risk))
+    # Shipment loss rate due to disruption: 5% base (routine damage/rejection)
+    # rising to 40% at maximum disruption (quality failures, partial shipments,
+    # diversion losses).  Kept below the Kaggle inspection-failure rate (36%)
+    # at low risk because inspections catch defects before they become losses.
+    defect_rate = min(0.40, 0.05 + 0.35 * risk)
 
     # --- Monte Carlo ---
     # Deterministic seed so the same scenario produces the same output;
