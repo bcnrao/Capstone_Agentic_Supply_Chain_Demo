@@ -9,7 +9,7 @@ from agentic_scd.agents.schema import Classification, ImpactMap, Simulation
 from agentic_scd.agents.weather import weather_node
 from agentic_scd.config import Settings, get_settings
 from agentic_scd.ingestion.connectors.freight import FreightIndexConnector
-from agentic_scd.ingestion.paths import SEED_DIR
+from agentic_scd.ingestion.paths import FALLBACK_DIR, SEED_DIR
 from agentic_scd.evaluation.metrics import evaluate
 from agentic_scd.ingestion.registry import load_registry
 from agentic_scd.ingestion.schema import DisruptionSignal, Location
@@ -31,16 +31,28 @@ def make_signal(title: str, body: str, region: str, hint: str = "severe") -> Dis
 
 
 def test_weather_node_extracts_risk_row() -> None:
-    signal = make_signal(
-        "Typhoon closes Shanghai port",
-        "Typhoon flooding and gale force winds are shutting container handling at Shanghai port.",
-        "China",
+    import json
+    # weather_node only processes WEATHER source_type signals with a structured
+    # raw_payload. Use the packaged fallback snapshot (same as test_weather_agent).
+    hubs = json.loads((FALLBACK_DIR / "open_meteo_hubs.json").read_text(encoding="utf-8"))
+    shanghai = next(row for row in hubs if row["hub"]["hub_port"] == "Port of Shanghai")
+    hub = shanghai["hub"]
+    signal = DisruptionSignal(
+        signal_id="test-weather",
+        source="open_meteo",
+        source_type="WEATHER",
+        source_reliability=0.9,
+        fetched_at=datetime.now(UTC),
+        title="Weather forecast for Port of Shanghai",
+        raw_text="",
+        location=Location(**hub),
+        severity_hint="severe",
+        raw_payload={"hub": hub, "response": shanghai["response"]},
     )
-    state = {"new_signals": [signal], "event_analyses": [heuristic_analysis(signal)]}
-    rows = weather_node(state)["weather_risks"]
+    rows = weather_node({"new_signals": [signal]})["weather_risks"]
     assert len(rows) == 1
-    assert rows[0].alert_level == "SEVERE"
-    assert rows[0].severity_score >= 7
+    # WeatherRiskAssessment uses aggregate_severity (not alert_level/severity_score)
+    assert rows[0].aggregate_severity >= 7.0
     assert rows[0].region == "China"
 
 

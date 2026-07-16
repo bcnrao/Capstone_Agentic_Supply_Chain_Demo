@@ -38,5 +38,13 @@
     "category": "geopolitical",
     "severity": 6.2,
     "region": "North America"
+  },
+  {
+    "name": "Minor port delay alert",
+    "title": "Minor weather advisory issued for Rotterdam port",
+    "body": "A low-pressure system is expected to cause brief delays at Rotterdam port. Vessel schedules may shift by one to two days but no major disruptions are anticipated.",
+    "category": "weather",
+    "severity": 2.5,
+    "region": "Netherlands"
   }
 ]

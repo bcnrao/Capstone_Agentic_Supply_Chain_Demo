@@ -59,6 +59,7 @@ services:
       # Live edits: notebooks and source are bind-mounted; the in-image .venv is kept.
       - ./backend/notebooks:/app/notebooks
       - ./backend/src:/app/src
+      - ./backend/tests:/app/tests
     # Idle so the infra is "up" but no run mode is chosen for you (exec one in).
     command: ["sleep", "infinity"]
     restart: unless-stopped
