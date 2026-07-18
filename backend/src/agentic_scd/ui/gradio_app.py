@@ -47,8 +47,18 @@ def kpi_markdown(state: dict) -> str:
     stockout = simulation.stockout_probability if simulation else 0.0
     revenue = simulation.revenue_impact if simulation else 0.0
     deviation = forecast.demand_deviation_pct if forecast else 0.0
+    # Detect whether the signal came from a live feed, a named scenario, or
+    # the seed fallback so the executive overview is honest about the source.
+    signals = state.get("new_signals", []) or []
+    if signals and signals[0].source == "seed_fallback":
+        signal_source_note = "⚠️ **No live feed signals found** — results based on seed fallback scenario.  \n"
+    elif signals and signals[0].source == "scenario_library":
+        signal_source_note = "🧪 **Scenario test mode** — results based on injected scenario, not live feeds.  \n"
+    else:
+        signal_source_note = "✅ **Live feed signals** — results based on data from configured RSS / weather feeds.  \n"
     return (
         f"### Executive overview\n"
+        f"{signal_source_note}"
         f"**Overall risk index:** {max_severity:.1f}/10  \n"
         f"**Active disruption signals:** {active}  \n"
         f"**Stockout probability:** {stockout:.0%}  \n"
@@ -81,9 +91,17 @@ def signals_table(state: dict) -> pd.DataFrame:
     classifications = {item.signal_id: item for item in state.get("classifications", []) or []}
     for signal in state.get("new_signals", []) or []:
         cls = classifications.get(signal.signal_id)
+        is_fallback = signal.source == "seed_fallback"
+        is_scenario = signal.source == "scenario_library"
+        if is_fallback:
+            label = "[SEED FALLBACK] "
+        elif is_scenario:
+            label = "[SCENARIO] "
+        else:
+            label = "[LIVE] "
         rows.append(
             {
-                "title": signal.title,
+                "title": label + signal.title,
                 "source": signal.source,
                 "region": signal.region or "",
                 "category": cls.category if cls else "",
@@ -112,18 +130,42 @@ def analysis_table(state: dict) -> pd.DataFrame:
 
 
 def impact_table(state: dict) -> pd.DataFrame:
-    rows = []
-    for impact in state.get("impacts", []) or []:
-        rows.append(
-            {
-                "suppliers": ", ".join(impact.affected_suppliers),
-                "lanes": ", ".join(impact.affected_lanes),
-                "facilities": ", ".join(impact.affected_facilities),
-                "products": ", ".join(impact.product_categories),
-                "reasoning": impact.reasoning,
-            }
+    impacts = state.get("impacts") or []
+    if impacts:
+        rows = []
+        for impact in impacts:
+            rows.append(
+                {
+                    "suppliers": ", ".join(impact.affected_suppliers),
+                    "lanes": ", ".join(impact.affected_lanes),
+                    "facilities": ", ".join(impact.affected_facilities),
+                    "products": ", ".join(impact.product_categories),
+                    "reasoning": impact.reasoning,
+                }
+            )
+        return pd.DataFrame(rows)
+    # Explain why the table is empty
+    route = state.get("route", "")
+    classifications = state.get("classifications", []) or []
+    if not classifications:
+        reason = "No signals classified — pipeline did not reach the impact agent."
+    elif "HIGH" in route or "high_path" in route:
+        reason = (
+            "Skipped — per routing spec, HIGH severity (>7) signals bypass "
+            "impact mapping and go straight to simulation. "
+            "Impact analysis runs only for MEDIUM (4–7) signals."
         )
-    return pd.DataFrame(rows)
+    elif "monitor_only" in route.lower() or all(
+        getattr(c, "severity", 0) < 4 for c in classifications
+    ):
+        severities = ", ".join(f"{c.severity:.1f}" for c in classifications)
+        reason = (
+            f"Skipped — route is monitor-only (signal severities: {severities}). "
+            f"Impact mapping runs only for MEDIUM (≥4.0) and HIGH (>7.0) signals."
+        )
+    else:
+        reason = "Impact mapping ran but returned no results."
+    return pd.DataFrame([{"status": "— skipped —", "reason": reason}])
 
 
 def weather_table(state: dict) -> pd.DataFrame:
@@ -177,8 +219,26 @@ def forecast_table(state: dict) -> pd.DataFrame:
 def forecast_context_markdown(state: dict) -> str:
     forecast = state.get("forecast")
     classifications = state.get("classifications", [])
+    route = state.get("route", "")
     if not forecast:
-        return "*No forecast generated (HIGH path or no signals).*"
+        if not classifications:
+            return "⚠️ *Forecast skipped — no signals were classified.*"
+        if "HIGH" in route or "high_path" in route:
+            high_sev = max((getattr(c,"severity",0) for c in classifications), default=0)
+            return (
+                f"⚠️ *Forecast skipped — **per routing spec**, HIGH severity signals (>7) "
+                f"bypass forecast and go straight to simulation "
+                f"(highest signal: {high_sev:.1f}/10).  \n"
+                f"Forecast runs only on MEDIUM (4–7) severity signals.*"
+            )
+        if "LOW" in route or "monitor" in route.lower():
+            severities = ", ".join(f"{c.severity:.1f}" for c in classifications)
+            return (
+                f"⚠️ *Forecast skipped — route is **monitor-only** "
+                f"(signal severities: {severities}).  \n"
+                f"Forecast runs only for MEDIUM (≥4.0) and HIGH (>7.0) signals.*"
+            )
+        return "⚠️ *Forecast skipped — no result available for this route.*"
     category = ""
     if classifications:
         top = max(classifications, key=lambda c: c.severity)
@@ -212,8 +272,20 @@ def evidence_table(state: dict) -> pd.DataFrame:
 
 def simulation_markdown(state: dict) -> str:
     sim = state.get("simulation")
+    route = state.get("route", "")
+    classifications = state.get("classifications", []) or []
     if not sim:
-        return "No simulation has run yet for this route."
+        if not classifications:
+            return "⚠️ **Simulation skipped** — no signals were classified."
+        if "LOW" in route or "monitor" in route.lower():
+            severities = ", ".join(f"{c.severity:.1f}" for c in classifications)
+            return (
+                f"⚠️ **Simulation skipped** — route is **monitor-only**.\n\n"
+                f"Signal severities: {severities}. "
+                f"Simulation runs only for MEDIUM (≥4.0) and HIGH (>7.0) severity signals. "
+                f"No stockout risk or revenue impact to report at this severity level."
+            )
+        return "⚠️ **Simulation skipped** — no result available for this route."
     return (
         f"### Simulation lab\n"
         f"Engine: **{sim.engine or 'local'}**  \n"
@@ -224,8 +296,6 @@ def simulation_markdown(state: dict) -> str:
         f"Revenue impact mean / p50 / p90: **{sim.revenue_impact:,.0f} / {sim.revenue_loss_p50:,.0f} / {sim.revenue_loss_p90:,.0f}**  \n"
         f"{sim.assumptions}"
     )
-
-
 def run_dashboard(scenario: str | None, use_pending_signals: bool) -> tuple:
     scenario_value = scenario or None
     state = run(scenario_value, use_pending_signals=use_pending_signals)
