@@ -46,5 +46,14 @@
     "category": "weather",
     "severity": 2.5,
     "region": "Netherlands"
-  }
+  },
+ {
+   "name": "Routine supplier audit",
+   "title": "Vendor review at manufacturing partner concluded without material findings",
+   "body": "A periodic on-site review at the manufacturing partner found two minor administrative observations on batch records. No operational impact is expected. Remediation is scheduled within 14 days.",
+   "category": "quality",
+   "severity": 1.5,
+   "region": "India"
+ }
+  
 ]
