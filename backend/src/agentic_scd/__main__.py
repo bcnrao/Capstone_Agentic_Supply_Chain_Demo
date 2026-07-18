@@ -2,14 +2,35 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import uuid
 
 from agentic_scd.db import connect, init_db
 from agentic_scd.graph import GraphState, build_graph
+from agentic_scd.ingestion.collect import collect
 from agentic_scd.ingestion.store import mark_done, save_run_result, serialize_state
+
+logger = logging.getLogger(__name__)
 
 
 def run(scenario_name: str | None = None, *, use_pending_signals: bool = False) -> GraphState:
+    # Auto-collect live signals when running without a named scenario so the
+    # pipeline sees fresh RSS / weather data rather than only what was already
+    # in the database.  Skipped for named scenarios (they inject their own
+    # signal via seed_node) and when use_pending_signals is set (caller wants
+    # to drain the existing inbox without a new collect round).
+    if not scenario_name and not use_pending_signals:
+        try:
+            summary = collect()
+            logger.info(
+                "auto-collect: fetched=%d kept=%d persisted=%d",
+                summary.totals.fetched,
+                summary.totals.kept,
+                summary.totals.persisted,
+            )
+        except Exception as exc:
+            logger.warning("auto-collect failed (continuing with existing signals): %s", exc)
+
     graph = build_graph()
     run_id = str(uuid.uuid4())
     initial: dict = {"run_id": run_id}
