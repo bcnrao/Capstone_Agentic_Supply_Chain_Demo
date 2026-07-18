@@ -16,6 +16,7 @@ WORKDIR /app
 # Install dependencies first for better layer caching: copy only the manifest + lock
 # (and the README the build references), then sync deps WITHOUT the project itself.
 COPY pyproject.toml uv.lock README.md ./
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 RUN uv sync --frozen --no-install-project --group notebooks
 
 # Copy the rest of the project and finish the (editable) install of the package.

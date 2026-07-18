@@ -29,7 +29,11 @@ def compress(values: list[float], horizon: int) -> list[float]:
             series,
         ).tolist()
     else:
-        chunks = np.array_split(series, horizon)
+        # Sort before chunking so consecutive chunk means form a smooth
+        # monotonic series.  Without sorting, the raw CSV order (which has
+        # large unsorted jumps) produces alternating high/low chunk means
+        # that make the local_trend baseline look jagged and unrealistic.
+        chunks = np.array_split(np.sort(series), horizon)
         baseline = [float(np.mean(chunk)) for chunk in chunks]
     trend = np.polyfit(np.arange(len(baseline)), baseline, 1)[0] if len(baseline) > 1 else 0.0
     return [round(max(10.0, baseline[idx] + 0.25 * trend * idx), 2) for idx in range(horizon)]

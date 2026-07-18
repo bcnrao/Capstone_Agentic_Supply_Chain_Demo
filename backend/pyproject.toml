@@ -20,6 +20,8 @@ dependencies = [
     "apscheduler>=3.11.2",
     "gradio>=6.19.0",
     "simpy>=4.1",
+    "prophet>=1.1",
+    "pandas>=2.0",
 ]
 
 [project.scripts]
