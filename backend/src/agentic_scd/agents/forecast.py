@@ -46,9 +46,15 @@ def baseline_from_dataset(path: Path | None = None) -> list[float]:
 
 def build_forecast(classifications: list[Classification], impacts: list[ImpactMap]) -> Forecast:
     risk = aggregate_risk(classifications)
+    # Dominant category — pick the highest-severity classification's category
+    # so the demand curve shape reflects the disruption type, not just risk score.
+    dominant_category = ""
+    if classifications:
+        top = max(classifications, key=lambda c: c.severity)
+        dominant_category = top.category or ""
     baseline, baseline_source, model_name = baseline_projection(HORIZON)
     freight_delta, freight_source = freight_pressure()
-    adjusted, disruption_factor = adjusted_projection(baseline, risk, len(impacts), freight_delta)
+    adjusted, disruption_factor = adjusted_projection(baseline, risk, len(impacts), freight_delta, dominant_category)
     dates = [(date.today() + timedelta(days=7 * idx)).isoformat() for idx in range(HORIZON)]
     deviation = 0.0 if not baseline else round(100 * (sum(adjusted) - sum(baseline)) / sum(baseline), 2)
     mean_adjusted = float(np.mean(adjusted)) if adjusted else 0.0

@@ -104,14 +104,29 @@ def baseline_projection(horizon: int, settings: Settings | None = None) -> tuple
     return baseline, baseline_source, "local_trend"
 
 
-def adjusted_projection(baseline: list[float], risk: float, impact_count: int, freight_delta: float) -> tuple[list[float], float]:
+def adjusted_projection(baseline: list[float], risk: float, impact_count: int, freight_delta: float, category: str = "") -> tuple[list[float], float]:
     if not baseline:
         return [], 0.0
     if risk <= 0 and impact_count <= 0:
         return [round(value, 2) for value in baseline], 0.0
     shock = max(0.0, freight_delta)
     relief = abs(min(0.0, freight_delta))
-    disruption_factor = min(0.62, risk * (0.16 + 0.022 * impact_count) + shock * 0.55)
+    # Category multiplier: different disruption types suppress demand differently
+    # even at the same risk score.  Logistics/port delays have an immediate but
+    # short-lived impact; geopolitical/tariff effects build slowly but persist;
+    # labor strikes are sudden and severe; weather is acute but recovers.
+    CATEGORY_MULTIPLIER: dict[str, float] = {
+        "weather":       1.10,   # acute shock — moderate demand drop
+        "logistics":     0.85,   # port/freight delays damp demand less than supply
+        "labor_strike":  1.20,   # hardest hit — production stops immediately
+        "geopolitical":  1.05,   # tariff/policy — uncertainty suppresses orders
+        "quality":       0.90,   # recall risk — partial demand shift, not full drop
+        "raw_material":  1.00,   # baseline
+        "demand_shock":  1.15,   # demand signal itself is disrupted
+        "policy":        1.05,
+    }
+    cat_mult = CATEGORY_MULTIPLIER.get(category.lower().strip(), 1.0)
+    disruption_factor = min(0.62, risk * (0.16 + 0.022 * impact_count) * cat_mult + shock * 0.55)
     recovery_factor = min(0.12, relief * 0.2)
     horizon = len(baseline)
     adjusted = []

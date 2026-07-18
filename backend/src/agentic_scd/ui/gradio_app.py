@@ -147,13 +147,52 @@ def forecast_table(state: dict) -> pd.DataFrame:
     forecast = state.get("forecast")
     if not forecast:
         return pd.DataFrame()
-    return pd.DataFrame(
-        {
-            "date": forecast.dates,
-            "baseline": forecast.baseline,
-            "risk_adjusted": forecast.adjusted,
-            "delta": [round(adjusted - baseline, 2) for baseline, adjusted in zip(forecast.baseline, forecast.adjusted, strict=False)],
-        }
+    rows = []
+    for date, base, adj in zip(forecast.dates, forecast.baseline, forecast.adjusted, strict=False):
+        delta = round(adj - base, 2)
+        pct   = round(100.0 * delta / base, 1) if base else 0.0
+        rows.append({
+            "week":          date,
+            "baseline (units/wk)": round(base, 0),
+            "risk-adjusted":       round(adj, 0),
+            "delta":               delta,
+            "change %":            f"{pct:+.1f}%",
+        })
+    # Summary row
+    b_mean = round(sum(forecast.baseline) / len(forecast.baseline), 0) if forecast.baseline else 0
+    a_mean = round(sum(forecast.adjusted) / len(forecast.adjusted), 0) if forecast.adjusted else 0
+    d_mean = round(a_mean - b_mean, 0)
+    p_mean = f"{forecast.demand_deviation_pct:+.1f}%"
+    rows.append({
+        "week":                "── 8-week mean ──",
+        "baseline (units/wk)": b_mean,
+        "risk-adjusted":       a_mean,
+        "delta":               d_mean,
+        "change %":            p_mean,
+    })
+    df = pd.DataFrame(rows)
+    return df
+
+
+def forecast_context_markdown(state: dict) -> str:
+    forecast = state.get("forecast")
+    classifications = state.get("classifications", [])
+    if not forecast:
+        return "*No forecast generated (HIGH path or no signals).*"
+    category = ""
+    if classifications:
+        top = max(classifications, key=lambda c: c.severity)
+        category = top.category or ""
+    deviation = forecast.demand_deviation_pct
+    direction = "▼ suppressed" if deviation < -1.0 else "▲ elevated" if deviation > 1.0 else "≈ stable"
+    return (
+        f"**Forecast model:** {forecast.model_name or 'unknown'}  \n"
+        f"**Disruption category:** {category or '—'}  \n"
+        f"**Demand signal:** {direction} by **{abs(deviation):.1f}%** over 8 weeks  \n"
+        f"**Inventory days remaining:** {forecast.inventory_days_left:.1f} days  \n"
+        f"**Predicted replenishment delay:** {forecast.predicted_delay_days:.1f} days  \n"
+        f"**Freight pressure:** {forecast.freight_pressure_pct:+.2f}%  \n"
+        f"**MAPE estimate:** {forecast.mape_estimate:.1%}"
     )
 
 
@@ -197,6 +236,7 @@ def run_dashboard(scenario: str | None, use_pending_signals: bool) -> tuple:
         weather_table(state),
         signals_table(state),
         impact_table(state),
+        forecast_context_markdown(state),
         forecast_table(state),
         simulation_markdown(state),
         recommendation_table(state),
@@ -505,7 +545,8 @@ def build_dashboard() -> gr.Blocks:
             with gr.Tab("Impact map"):
                 impacts = gr.Dataframe(label="Affected suppliers, lanes, and facilities", interactive=False)
             with gr.Tab("Demand forecast"):
-                forecast = gr.Dataframe(label="Baseline vs risk-adjusted forecast", interactive=False)
+                forecast_context = gr.Markdown(value="*Run the pipeline to see forecast context.*")
+                forecast = gr.Dataframe(label="Baseline vs risk-adjusted forecast (weekly units)", interactive=False)
             with gr.Tab("Simulation"):
                 simulation = gr.Markdown()
             with gr.Tab("Mitigation"):
@@ -523,7 +564,7 @@ def build_dashboard() -> gr.Blocks:
         )
         reload_config.click(reload_config_panel, outputs=config_outputs)
         close_config.click(close_config_panel, outputs=[config_modal])
-        run_btn.click(run_dashboard, inputs=[scenario, use_pending_signals], outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast, simulation, recommendations, evidence, raw]).then(history_table, outputs=[history]).then(inbox_table, outputs=[inbox])
+        run_btn.click(run_dashboard, inputs=[scenario, use_pending_signals], outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw]).then(history_table, outputs=[history]).then(inbox_table, outputs=[inbox])
         collect_btn.click(collect_dashboard, outputs=[collect_status]).then(inbox_table, outputs=[inbox])
         refresh_history.click(history_table, outputs=[history])
         refresh_inbox.click(inbox_table, outputs=[inbox])
