@@ -47,8 +47,18 @@ def kpi_markdown(state: dict) -> str:
     stockout = simulation.stockout_probability if simulation else 0.0
     revenue = simulation.revenue_impact if simulation else 0.0
     deviation = forecast.demand_deviation_pct if forecast else 0.0
+    # Detect whether the signal came from a live feed, a named scenario, or
+    # the seed fallback so the executive overview is honest about the source.
+    signals = state.get("new_signals", []) or []
+    if signals and signals[0].source == "seed_fallback":
+        signal_source_note = "⚠️ **No live feed signals found** — results based on seed fallback scenario.  \n"
+    elif signals and signals[0].source == "scenario_library":
+        signal_source_note = "🧪 **Scenario test mode** — results based on injected scenario, not live feeds.  \n"
+    else:
+        signal_source_note = "✅ **Live feed signals** — results based on data from configured RSS / weather feeds.  \n"
     return (
         f"### Executive overview\n"
+        f"{signal_source_note}"
         f"**Overall risk index:** {max_severity:.1f}/10  \n"
         f"**Active disruption signals:** {active}  \n"
         f"**Stockout probability:** {stockout:.0%}  \n"
@@ -81,9 +91,17 @@ def signals_table(state: dict) -> pd.DataFrame:
     classifications = {item.signal_id: item for item in state.get("classifications", []) or []}
     for signal in state.get("new_signals", []) or []:
         cls = classifications.get(signal.signal_id)
+        is_fallback = signal.source == "seed_fallback"
+        is_scenario = signal.source == "scenario_library"
+        if is_fallback:
+            label = "[SEED FALLBACK] "
+        elif is_scenario:
+            label = "[SCENARIO] "
+        else:
+            label = "[LIVE] "
         rows.append(
             {
-                "title": signal.title,
+                "title": label + signal.title,
                 "source": signal.source,
                 "region": signal.region or "",
                 "category": cls.category if cls else "",
