@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 
 import numpy as np
@@ -55,35 +56,51 @@ def freight_pressure(settings: Settings | None = None) -> tuple[float, str]:
     return 0.0, "unavailable"
 
 
+logger = logging.getLogger(__name__)
+
+
 def prophet_series(horizon: int, settings: Settings | None = None) -> list[float] | None:
     values = database_dataset_values(settings) or seed_dataset_values()
     if len(values) < max(12, horizon):
+        logger.warning(
+            "prophet_series: insufficient data (%d points, need %d) — falling back to local_trend",
+            len(values), max(12, horizon),
+        )
         return None
     try:
         import pandas as pd
         from prophet import Prophet
-    except Exception:
+    except Exception as exc:
+        logger.warning("prophet_series: Prophet not available (%s) — falling back to local_trend", exc)
         return None
-    start = date.today() - timedelta(days=7 * (len(values) - 1))
-    frame = pd.DataFrame(
-        {
-            "ds": [start + timedelta(days=7 * idx) for idx in range(len(values))],
-            "y": values,
-        }
-    )
-    model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
-    model.fit(frame)
-    future = model.make_future_dataframe(periods=horizon, freq="W")
-    forecast = model.predict(future)["yhat"].tail(horizon).tolist()
-    return [round(max(10.0, float(value)), 2) for value in forecast]
+    try:
+        start = date.today() - timedelta(days=7 * (len(values) - 1))
+        frame = pd.DataFrame(
+            {
+                "ds": [start + timedelta(days=7 * idx) for idx in range(len(values))],
+                "y": values,
+            }
+        )
+        model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
+        model.fit(frame)
+        future = model.make_future_dataframe(periods=horizon, freq="W")
+        forecast = model.predict(future)["yhat"].tail(horizon).tolist()
+        result = [round(max(10.0, float(value)), 2) for value in forecast]
+        logger.info("prophet_series: fitted on %d points, returning %d-week projection", len(values), horizon)
+        return result
+    except Exception as exc:
+        logger.warning("prophet_series: fit/predict failed (%s) — falling back to local_trend", exc)
+        return None
 
 
 def baseline_projection(horizon: int, settings: Settings | None = None) -> tuple[list[float], str, str]:
     projected = prophet_series(horizon, settings)
     if projected:
         _, baseline_source = baseline_from_history(horizon, settings)
+        logger.info("baseline_projection: using prophet  source=%s", baseline_source)
         return projected, baseline_source, "prophet"
     baseline, baseline_source = baseline_from_history(horizon, settings)
+    logger.info("baseline_projection: using local_trend  source=%s", baseline_source)
     return baseline, baseline_source, "local_trend"
 
 

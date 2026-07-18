@@ -68,6 +68,22 @@ The system is composed of specialized agents orchestrated with LangGraph:
 - **Simulation:** SimPy (discrete-event), Monte Carlo methods
 - **Ingestion:** feedparser, NLP pipelines
 - **Dashboard:** Gradio
+- **Observability:** LangSmith (tracing and monitoring)
+
+## Observability with LangSmith
+
+To enable LangSmith tracing for monitoring and debugging the LangGraph pipeline:
+
+1. Install the required packages (already included in the backend dependencies):
+   - `langchain`
+   - `langsmith`
+
+2. Set the following environment variables (you can add them to your `.env` file in the repo root):
+   - `LANGCHAIN_TRACING_V2=true`
+   - `LANGCHAIN_API_KEY=<your_langchain_api_key>`
+   - `LANGCHAIN_PROJECT=<optional_project_name>` (defaults to "default")
+
+Once configured, each run of the pipeline will be automatically traced and sent to LangSmith.
 
 ## Project layout
 
