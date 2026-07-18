@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from agentic_scd.ingestion.connectors.base import RawItem
@@ -30,6 +32,31 @@ def scenario_signal(name: str):
     return None
 
 
+def _pick_seed_scenario() -> dict:
+    """Pick a scenario from scenarios.json keyed by the current hour so the
+    seed rotates across runs during the day instead of always returning the
+    same hardcoded signal.  Falls back to a safe default if the file is
+    missing."""
+    path = SEED_DIR / "scenarios.json"
+    if path.exists():
+        try:
+            rows = json.loads(path.read_text(encoding="utf-8"))
+            if rows:
+                # Rotate by hour-of-day so each run within the same hour is
+                # consistent (deterministic for tests) but changes over time.
+                idx = datetime.now(UTC).hour % len(rows)
+                return rows[idx]
+        except Exception:
+            pass
+    # Absolute fallback — only reached if scenarios.json is missing
+    return {
+        "title": "Supply chain disruption signal detected",
+        "body": "An unspecified supply chain disruption has been detected affecting logistics and inventory levels.",
+        "region": "Global",
+        "severity": 5.0,
+    }
+
+
 def seed_node(state: "GraphState") -> dict:
     if state.get("new_signals"):
         return {}
@@ -38,11 +65,31 @@ def seed_node(state: "GraphState") -> dict:
         signal = scenario_signal(scenario_name)
         if signal:
             return {"new_signals": [signal]}
-    connector = SyntheticConnector(name="demo_seed", reliability=0.7, count=1)
+
+    # No named scenario and no live signals found from feeds.
+    # Inject a rotating fallback signal so the pipeline always has something
+    # to run on, but label it explicitly as a seed fallback so the dashboard
+    # and logs make clear this is NOT a real live disruption signal.
+    row = _pick_seed_scenario()
+    # Use a distinct source name so the signals table shows "seed_fallback"
+    # rather than "demo_seed" or "SYNTHETIC", making it immediately clear
+    # in the demo that live feeds returned nothing and this is a placeholder.
+    connector = SyntheticConnector(name="seed_fallback", reliability=0.7, count=1)
     raw = RawItem(
-        title="Tariff disrupts customs clearance for inbound imports",
-        body="A new tariff and customs checks are delaying inbound replenishment across cross-border lanes.",
-        location={"region": "India"},
-        payload={"severity_hint": "moderate", "demo_seed": True},
+        title=row["title"],
+        body=row["body"],
+        location={"region": row.get("region", "Global")},
+        payload={
+            "severity_hint": "high" if row.get("severity", 0) >= 7 else "moderate",
+            "fallback_seed": True,   # flag for UI display
+            "fallback_reason": "No live signals found from configured feeds — using seed scenario as fallback.",
+            **row,
+        },
+    )
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "seed_node: no live signals found — injecting seed fallback '%s' (region: %s). "
+        "Run 'agentic-scd-collect' to populate the database with fresh feed data.",
+        row["title"], row.get("region", "Global"),
     )
     return {"new_signals": [normalize(raw, connector)]}
