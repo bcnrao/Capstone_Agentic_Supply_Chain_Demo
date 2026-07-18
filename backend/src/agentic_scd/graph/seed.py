@@ -36,16 +36,21 @@ def _pick_seed_scenario() -> dict:
     """Pick a scenario from scenarios.json keyed by the current hour so the
     seed rotates across runs during the day instead of always returning the
     same hardcoded signal.  Falls back to a safe default if the file is
-    missing."""
+    missing.
+
+    Only scenarios with severity >= 4.0 are considered — low-severity entries
+    route to monitor_only which skips the impact and forecast agents, breaking
+    the assumption that a no-scenario run always exercises the full pipeline.
+    """
     path = SEED_DIR / "scenarios.json"
     if path.exists():
         try:
             rows = json.loads(path.read_text(encoding="utf-8"))
-            if rows:
-                # Rotate by hour-of-day so each run within the same hour is
-                # consistent (deterministic for tests) but changes over time.
-                idx = datetime.now(UTC).hour % len(rows)
-                return rows[idx]
+            # Filter to MEDIUM+ severity only so fallback always takes full_path
+            eligible = [r for r in rows if r.get("severity", 0) >= 4.0]
+            if eligible:
+                idx = datetime.now(UTC).hour % len(eligible)
+                return eligible[idx]
         except Exception:
             pass
     # Absolute fallback — only reached if scenarios.json is missing
