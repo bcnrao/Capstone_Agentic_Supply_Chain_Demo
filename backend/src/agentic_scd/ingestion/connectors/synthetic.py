@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from agentic_scd.ingestion.connectors.base import RawItem, SourceType
 
 SCENARIOS = [
@@ -39,13 +41,19 @@ class SyntheticConnector:
         self.count = count
 
     def build_items(self) -> list[RawItem]:
+        # Include the current date in the published field so each day's run
+        # produces a distinct dedup hash.  Without this, the first collect
+        # permanently marks all synthetic hashes as seen and they never
+        # re-enter the pipeline on subsequent runs.
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         items = [SCENARIOS[i % len(SCENARIOS)] for i in range(self.count)]
         return [
             RawItem(
                 title=item["title"],
                 body=item["body"],
+                published=today,
                 location={"region": item["region"]},
-                payload={"scenario_index": i, "severity_hint": item["severity_hint"], **item},
+                payload={"scenario_index": i, "severity_hint": item["severity_hint"], "date": today, **item},
             )
             for i, item in enumerate(items)
         ]
