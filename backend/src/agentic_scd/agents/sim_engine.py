@@ -427,16 +427,24 @@ def run_discrete_event(
     n_iters   = max(1, iterations)
 
     # --- demand calibration ---
-    # forecast.baseline is a list of weekly demand values; mean gives weekly demand.
-    # Divide by 7 to get daily, then the simulation drains daily_demand per day.
-    if forecast and forecast.baseline:
-        baseline_demand = float(np.mean(forecast.baseline)) / 7.0
+    # The Kaggle CSV rows contain "products sold + 0.35*stock" per SKU, not
+    # true daily demand.  Prophet fits those as a weekly series whose mean
+    # (~720/week = 103/day) is ~3.4× the calibrated sim demand of 30 u/day.
+    # Using the absolute forecast values directly would break all the
+    # inventory/shortage arithmetic that was validated at 26-30 u/day.
+    #
+    # Fix: extract the DISRUPTION RATIO (adjusted / baseline) from the forecast
+    # and apply it to KAGGLE_DAILY_DEMAND.  This preserves the demand-suppression
+    # signal from Prophet (e.g. -8% for a typhoon) while staying in the
+    # calibrated range.  When no forecast is available (HIGH path), ratio = 1
+    # and daily_demand = KAGGLE_DAILY_DEMAND unchanged.
+    if forecast and forecast.baseline and forecast.adjusted and sum(forecast.baseline) > 0:
+        disruption_ratio = float(np.mean(forecast.adjusted)) / float(np.mean(forecast.baseline))
+        disruption_ratio = max(0.50, min(1.0, disruption_ratio))   # clamp 50-100%
+        baseline_demand  = KAGGLE_DAILY_DEMAND
+        adjusted_demand  = KAGGLE_DAILY_DEMAND * disruption_ratio
     else:
         baseline_demand = KAGGLE_DAILY_DEMAND  # 30 units/day
-
-    if forecast and forecast.adjusted:
-        adjusted_demand = float(np.mean(forecast.adjusted)) / 7.0
-    else:
         adjusted_demand = baseline_demand * max(0.0, 1.0 - 0.18 * risk)
 
     daily_demand = max(1.0, adjusted_demand)
@@ -445,6 +453,10 @@ def run_discrete_event(
     # arrives, plus a risk-scaled safety buffer.
     # first_ship_ETA uses full lead_time (ship0 gets a supplier slot immediately
     # since supplier_cap >= 2).  safety_buffer: +8d at risk=0, +0d at risk=1.0.
+    # inventory_days_left from forecast is used as a floor only when it exceeds
+    # the ETA-based cover — at high risk (e.g. typhoon) inventory_days_left = 11d
+    # which is below the ETA floor of 38d, so the ETA floor wins.  At low risk
+    # (inventory_days_left = 26d) it may become the binding constraint.
     _forecast_inv_days = (
         max(1.0, forecast.inventory_days_left)
         if (forecast and forecast.inventory_days_left)
