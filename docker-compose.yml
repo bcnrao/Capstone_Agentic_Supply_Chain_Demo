@@ -91,15 +91,14 @@ services:
     command: ["uv", "run", "agentic-scd-api"]
     restart: unless-stopped
 
-  # React + Ant Design product UI, built with Vite and served by nginx. VITE_API_BASE_URL
-  # is baked in at build time and must be reachable from the browser, so it points at the
-  # host-published API port (localhost:8000), not the internal compose hostname.
+  # React + Ant Design product UI, built with Vite and served by nginx. The browser
+  # calls same-origin /api/*; nginx in this container proxies to the `api` service.
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     image: agentic_scd_frontend
     container_name: agentic_scd_frontend
     depends_on:

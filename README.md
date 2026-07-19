@@ -693,10 +693,11 @@ npm install                   # first time only
 npm run dev                   # Vite dev server -> http://localhost:3000
 ```
 
-The API base URL is read from `VITE_API_BASE_URL` (see `frontend/.env`, default
-`http://localhost:8000`). Build a static bundle with `npm run build` (output in
-`frontend/dist/`). Under Docker Compose the UI is served by nginx on
-`http://localhost:3000` automatically — no manual steps needed.
+The API is reached at **`/api`** on the same host as the UI (nginx or the Vite dev
+proxy forwards to FastAPI on port 8000). Optional override: `VITE_API_BASE_URL` in
+`frontend/.env` (default `/api`). Build a static bundle with `npm run build` (output in
+`frontend/dist/`). Under Docker Compose, open the UI port (default `3001`); API calls
+stay same-origin — no per-machine IP in the bundle.
 
 ## Ingestion service
 
