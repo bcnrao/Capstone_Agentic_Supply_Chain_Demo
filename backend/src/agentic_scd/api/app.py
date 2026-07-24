@@ -20,6 +20,7 @@ from agentic_scd.ingestion.pipeline import ingest_signals
 from agentic_scd.ingestion.relevance import load_lexicon
 from agentic_scd.ingestion.store import recent_runs, recent_signals, serialize_state
 from agentic_scd.ingestion.webhook import WebhookEvent, webhook_source
+from agentic_scd.observability import configure_tracing
 from agentic_scd.rag.retriever import (
     rebuild_vector_store,
     history_retriever,
@@ -31,6 +32,7 @@ from agentic_scd.rag.retriever import (
 from agentic_scd.runtime_warnings import suppress_known_dependency_warnings
 
 suppress_known_dependency_warnings()
+configure_tracing()
 
 logger = logging.getLogger(__name__)
 

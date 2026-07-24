@@ -50,6 +50,13 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
       USE_MOCK_LLM: ${USE_MOCK_LLM:-false}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-genAI}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      APP_NAME: ${APP_NAME:-agentic-scd}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_ENV: ${APP_ENV:-local}
       # Bind Gradio to 0.0.0.0 so the published port is reachable from the host.
       GRADIO_SERVER_NAME: 0.0.0.0
     ports:
@@ -81,6 +88,13 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
       USE_MOCK_LLM: ${USE_MOCK_LLM:-false}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-genAI}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      APP_NAME: ${APP_NAME:-agentic-scd}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_ENV: ${APP_ENV:-local}
       # Bind uvicorn to 0.0.0.0 so the published port is reachable from the host.
       API_HOST: 0.0.0.0
     ports:

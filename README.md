@@ -72,18 +72,32 @@ The system is composed of specialized agents orchestrated with LangGraph:
 
 ## Observability with LangSmith
 
-To enable LangSmith tracing for monitoring and debugging the LangGraph pipeline:
+Traces every LangGraph pipeline run (nodes, Groq LLM calls, RAG searches) to
+[LangSmith Cloud](https://smith.langchain.com). Works for both Docker Compose and local `uv` runs.
 
-1. Install the required packages (already included in the backend dependencies):
-   - `langchain`
-   - `langsmith`
+1. Packages are already in `backend/pyproject.toml` (`langgraph`, `langchain`, `langsmith`).
 
-2. Set the following environment variables (you can add them to your `.env` file in the repo root):
-   - `LANGCHAIN_TRACING_V2=true`
-   - `LANGCHAIN_API_KEY=<your_langchain_api_key>`
-   - `LANGCHAIN_PROJECT=<optional_project_name>` (defaults to "default")
+2. Set these in the repo-root `.env` (see `.env.example`):
 
-Once configured, each run of the pipeline will be automatically traced and sent to LangSmith.
+   - `LANGSMITH_TRACING=true`
+   - `LANGSMITH_API_KEY=<your_langsmith_api_key>`
+   - `LANGSMITH_PROJECT=genAI` (optional; defaults to `default`)
+   - `LANGSMITH_ENDPOINT=https://api.smith.langchain.com` (optional)
+   - `APP_NAME`, `APP_VERSION`, `APP_ENV` (optional metadata on each trace)
+
+3. Restart the API so containers pick up env changes:
+
+   ```bash
+   docker compose up -d api
+   ```
+
+4. Trigger a pipeline run (`POST /run` or the React UI), then open the project in
+   [smith.langchain.com](https://smith.langchain.com). You should see a run named
+   **Supply Chain Disruption Pipeline** with nested graph nodes, **Groq Chat Completion**,
+   and **RAG Search** spans where those paths executed.
+
+Legacy `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` names are still
+accepted and mapped automatically.
 
 ## Project layout
 

@@ -85,6 +85,10 @@ class Settings:
     retention_signals_ttl_days: int = 90
     simulation_iterations: int = 300
     dashboard_share: bool = False
+    app_name: str = "agentic-scd"
+    app_version: str = "0.1.0"
+    app_env: str = "local"
+    langsmith_tracing: bool = False
 
     @property
     def resolved_database_url(self) -> str | None:
@@ -100,6 +104,8 @@ def get_settings() -> Settings:
     load_dotenv()
     apply_local_env_defaults()
     data_dir = resolve_data_dir()
+    # Prefer LANGSMITH_TRACING; fall back to legacy LANGCHAIN_TRACING_V2.
+    tracing = env_flag("LANGSMITH_TRACING", default=False) or env_flag("LANGCHAIN_TRACING_V2", default=False)
     return Settings(
         data_dir=data_dir,
         database_url=build_database_url(data_dir),
@@ -119,4 +125,8 @@ def get_settings() -> Settings:
         retention_signals_ttl_days=env_int("RETENTION_SIGNALS_TTL_DAYS", 90),
         simulation_iterations=env_int("SIMULATION_ITERATIONS", 300),
         dashboard_share=env_flag("GRADIO_SHARE", default=False),
+        app_name=os.getenv("APP_NAME", "agentic-scd"),
+        app_version=os.getenv("APP_VERSION", "0.1.0"),
+        app_env=os.getenv("APP_ENV", "local"),
+        langsmith_tracing=tracing,
     )

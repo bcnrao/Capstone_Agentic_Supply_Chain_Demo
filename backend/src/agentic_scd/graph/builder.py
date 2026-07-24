@@ -42,7 +42,7 @@ NODE_FNS = {
 
 
 class SimpleGraph:
-    def invoke(self, state: dict | None = None) -> GraphState:
+    def invoke(self, state: dict | None = None, config: object | None = None, **_: object) -> GraphState:
         from agentic_scd.agents.output_guardrail import output_guardrail_node
         from agentic_scd.graph.routing import PRE_CLASSIFY_STEPS, route_steps
 

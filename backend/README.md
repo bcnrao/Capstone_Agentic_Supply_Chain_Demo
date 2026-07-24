@@ -16,18 +16,22 @@ uv run pytest                 # tests
 
 ## LangSmith Tracing (Optional)
 
-To enable LangSmith tracing for monitoring and debugging the LangGraph pipeline:
+Traces LangGraph pipeline runs to [LangSmith Cloud](https://smith.langchain.com).
 
-1. Install the required packages (already included in `pyproject.toml`):
-   - `langchain`
-   - `langsmith`
+1. Packages are already in `pyproject.toml` (`langgraph`, `langchain`, `langsmith`).
 
-2. Set the following environment variables (you can add them to your `.env` file in the repo root):
-   - `LANGCHAIN_TRACING_V2=true`
-   - `LANGCHAIN_API_KEY=<your_langchain_api_key>`
-   - `LANGCHAIN_PROJECT=<optional_project_name>` (defaults to "default")
+2. Set these in the **repo-root** `.env`:
 
-Once configured, each run of the pipeline will be automatically traced and sent to LangSmith.
+   - `LANGSMITH_TRACING=true`
+   - `LANGSMITH_API_KEY=<your_langsmith_api_key>`
+   - `LANGSMITH_PROJECT=genAI` (optional)
+   - Optional: `LANGSMITH_ENDPOINT`, `APP_NAME`, `APP_VERSION`, `APP_ENV`
+
+3. Run the pipeline (`uv run agentic-scd` or `uv run agentic-scd-api`) and inspect the
+   project in LangSmith. Runs are named **Supply Chain Disruption Pipeline**.
+
+Docker Compose passes the same env vars into the `api` and `app` services. See the
+repo-root README for full stack instructions.
 
 See the **repo-root `README.md`** for the full quick start (Docker and uv paths),
 architecture, and per-phase documentation.

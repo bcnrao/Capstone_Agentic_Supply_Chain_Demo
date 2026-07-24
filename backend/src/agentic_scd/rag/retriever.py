@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
+from langsmith import traceable
 
 from agentic_scd.config import Settings, get_settings
 from agentic_scd.db import connect, init_db
@@ -527,6 +528,7 @@ def _fallback_search(
     return [document for _, document in ranked[:top_k]]
 
 
+@traceable(run_type="retriever", name="RAG Search")
 def search_collection(
     collection_name: str,
     provider: Callable[[], list[Document]],
