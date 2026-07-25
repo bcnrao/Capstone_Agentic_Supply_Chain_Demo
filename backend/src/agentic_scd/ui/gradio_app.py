@@ -15,7 +15,7 @@ from agentic_scd.db import connect, init_db, ping
 from agentic_scd.ingestion.collect import collect
 from agentic_scd.ingestion.paths import SEED_DIR, lexicon_yaml_path, run_dir, snapshot_dir, sources_yaml_path
 from agentic_scd.ingestion.relevance import load_lexicon
-from agentic_scd.ingestion.store import recent_runs, recent_signals, serialize_state
+from agentic_scd.ingestion.store import recent_runs, serialize_state
 from agentic_scd.llm.client import completion
 from agentic_scd.rag.retriever import (
     forecast_retriever,
@@ -132,7 +132,6 @@ WEATHER_COLS = ["event_date", "hub", "region", "horizon_days", "aggregate_severi
 FORECAST_COLS = ["week", "baseline (units/wk)", "risk-adjusted", "delta", "change %"]
 RECOMMENDATION_COLS = ["action", "urgency", "expected_impact", "owner"]
 EVIDENCE_COLS = ["evidence"]
-INBOX_COLS = ["event_date", "title", "source", "type", "region", "severity_hint", "status"]
 HISTORY_COLS = ["run_id", "created_at", "scenario_name", "max_severity"]
 
 
@@ -370,7 +369,7 @@ def collect_start() -> tuple:
     """Immediate feedback while external data is fetched."""
     return (
         gr.update(value="⏳  Refreshing…", interactive=False),
-        "⏳ *Fetching external data (news, RSS, weather) into the inbox…*",
+        "⏳ *Fetching external data (news, RSS, weather) into the signals database…*",
     )
 
 
@@ -396,30 +395,6 @@ def history_table() -> pd.DataFrame:
     return pd.DataFrame(
         [{key: row[key] for key in HISTORY_COLS} for row in rows],
         columns=HISTORY_COLS,
-    )
-
-
-def inbox_table() -> pd.DataFrame:
-    init_db()
-    try:
-        with connect() as conn:
-            signals = recent_signals(conn, 50)
-    except Exception:
-        signals = []
-    return pd.DataFrame(
-        [
-            {
-                "event_date": signal_timestamp_label(item),
-                "title": item.title,
-                "source": item.source,
-                "type": item.source_type,
-                "region": item.region or "",
-                "severity_hint": item.severity_hint or "",
-                "status": "stored",
-            }
-            for item in signals
-        ],
-        columns=INBOX_COLS,
     )
 
 
@@ -697,14 +672,12 @@ def build_dashboard() -> gr.Blocks:
                 refresh_history = gr.Button("Refresh run history")
             with gr.Tab("Signals"):
                 raw_signals = gr.Dataframe(value=pd.DataFrame(columns=RAW_SIGNAL_COLS), label="Raw signals ingested this run", interactive=False)
-            with gr.Tab("Risk monitor"):
-                signals = gr.Dataframe(value=pd.DataFrame(columns=SIGNAL_COLS), label="Signals and classification", interactive=False)
-                inbox = gr.Dataframe(value=pd.DataFrame(columns=INBOX_COLS), label="Stored signal inbox", interactive=False)
-                refresh_inbox = gr.Button("Refresh inbox")
             with gr.Tab("News analysis"):
                 analyses = gr.Dataframe(value=pd.DataFrame(columns=ANALYSIS_COLS), label="Event extraction and summarization", interactive=False)
             with gr.Tab("Weather risk"):
                 weather = gr.Dataframe(value=pd.DataFrame(columns=WEATHER_COLS), label="7-day hub weather risk", interactive=False)
+            with gr.Tab("Classification"):
+                signals = gr.Dataframe(value=pd.DataFrame(columns=SIGNAL_COLS), label="Signals and classification", interactive=False)
             with gr.Tab("Impact map"):
                 impacts = gr.Dataframe(value=pd.DataFrame(columns=IMPACT_COLS), label="Affected suppliers, lanes, and facilities", interactive=False)
             with gr.Tab("Demand forecast"):
@@ -730,14 +703,13 @@ def build_dashboard() -> gr.Blocks:
         run_btn.click(run_start, outputs=[run_btn, collect_status]).then(
             run_dashboard, inputs=[scenario],
             outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw, raw_signals],
-        ).then(history_table, outputs=[history]).then(inbox_table, outputs=[inbox]).then(
+        ).then(history_table, outputs=[history]).then(
             run_done, outputs=[run_btn, collect_status]
         )
         collect_btn.click(collect_start, outputs=[collect_btn, collect_status]).then(
             collect_dashboard, outputs=[collect_status]
-        ).then(inbox_table, outputs=[inbox]).then(collect_done, outputs=[collect_btn])
+        ).then(collect_done, outputs=[collect_btn])
         refresh_history.click(history_table, outputs=[history])
-        refresh_inbox.click(inbox_table, outputs=[inbox])
         answer_btn.click(ask_network, inputs=[question], outputs=[answer])
     return app
 
