@@ -195,15 +195,15 @@ def classify_signal(signal: DisruptionSignal, analysis: EventAnalysis | None = N
         confidence = round(min(0.99, confidence + 0.07), 4)
     if weather is not None and category == "weather":
         confidence = round(min(0.99, confidence + 0.05), 4)
+    # Severity sets the risk level (for urgency/display) but every signal now
+    # runs the full agent pipeline — no severity-based shortcuts.
     if severity > 7:
         level = "HIGH"
-        route = "high_path_simulation_first"
     elif severity >= 4:
         level = "MEDIUM"
-        route = "full_path"
     else:
         level = "LOW"
-        route = "monitor_only"
+    route = "full_path"
     history_note = f", history {history_category}" if history_category else ""
     rationale = f"{hit_count} category keyword hits, reliability {reliability:.2f}, hint {hint}{history_note}"
     if weather is not None:
@@ -218,9 +218,10 @@ def classify_node(state: "GraphState") -> dict:
     rows = [classify_signal(signal, analyses.get(signal.signal_id), weather_map.get(signal.signal_id)) for signal in state.get("new_signals", [])]
     max_severity = max((row.severity for row in rows), default=0.0)
     if max_severity > 7:
-        route = "HIGH severity: simulation is prioritized and mitigation is generated immediately."
+        level = "HIGH"
     elif max_severity >= 4:
-        route = "MEDIUM severity: impact mapping, forecast, simulation, and recommendation all run."
+        level = "MEDIUM"
     else:
-        route = "LOW severity: event is tracked with a lightweight monitor path."
+        level = "LOW"
+    route = f"{level} severity: full agent pipeline runs — impact, forecast, simulation, and mitigation."
     return {"classifications": rows, "route": route}

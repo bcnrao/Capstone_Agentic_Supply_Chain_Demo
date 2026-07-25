@@ -27,7 +27,7 @@ def make_signal(title: str, body: str, region: str, hint: str = "high") -> Disru
     )
 
 
-def test_graph_routes_high_path_without_forecast() -> None:
+def test_graph_high_severity_runs_full_pipeline() -> None:
     graph = build_graph()
     state = graph.invoke(
         {
@@ -41,8 +41,11 @@ def test_graph_routes_high_path_without_forecast() -> None:
             ]
         }
     )
-    assert state["classifications"][0].route == "high_path_simulation_first"
-    assert state.get("forecast") is None
+    # HIGH severity no longer shortcuts — every signal runs the full pipeline.
+    assert state["classifications"][0].risk_level == "HIGH"
+    assert state["classifications"][0].route == "full_path"
+    assert state.get("impacts")
+    assert state.get("forecast") is not None
     assert state["simulation"].stockout_probability >= 0
     assert state["recommendation"].actions
 

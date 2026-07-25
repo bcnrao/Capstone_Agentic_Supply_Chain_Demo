@@ -20,7 +20,7 @@ class Classification(BaseModel):
     severity: float = Field(default=0.0, ge=0, le=10)
     confidence: float = Field(default=0.75, ge=0, le=1)
     risk_level: str = "LOW"
-    route: str = "monitor_only"
+    route: str = "full_path"
     rationale: str = ""
 
     @model_validator(mode="after")
@@ -30,13 +30,12 @@ class Classification(BaseModel):
         if not self.risk_level or self.risk_level == "LOW":
             if self.severity > 7:
                 self.risk_level = "HIGH"
-                self.route = "high_path_simulation_first"
             elif self.severity >= 4:
                 self.risk_level = "MEDIUM"
-                self.route = "full_path"
             else:
                 self.risk_level = "LOW"
-                self.route = "monitor_only"
+        # Every signal runs the full pipeline; severity only sets risk_level.
+        self.route = "full_path"
         return self
 
 

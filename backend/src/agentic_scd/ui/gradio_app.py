@@ -190,27 +190,18 @@ def impact_table(state: dict) -> pd.DataFrame:
             )
         return pd.DataFrame(rows)
     # Explain why the table is empty
-    route = state.get("route", "")
     classifications = state.get("classifications", []) or []
     if not classifications:
         reason = "No signals classified — pipeline did not reach the impact agent."
-    elif "HIGH" in route or "high_path" in route:
-        reason = (
-            "Skipped — per routing spec, HIGH severity (>7) signals bypass "
-            "impact mapping and go straight to simulation. "
-            "Impact analysis runs only for MEDIUM (4–7) signals."
-        )
-    elif "monitor_only" in route.lower() or all(
-        getattr(c, "severity", 0) < 4 for c in classifications
-    ):
+    elif all(getattr(c, "severity", 0) < 3 for c in classifications):
         severities = ", ".join(f"{c.severity:.1f}" for c in classifications)
         reason = (
-            f"Skipped — route is monitor-only (signal severities: {severities}). "
-            f"Impact mapping runs only for MEDIUM (≥4.0) and HIGH (>7.0) signals."
+            f"No entities mapped — all signal severities ({severities}) are below "
+            f"the 3.0 impact threshold."
         )
     else:
         reason = "Impact mapping ran but returned no results."
-    return pd.DataFrame([{"status": "— skipped —", "reason": reason}])
+    return pd.DataFrame([{"status": "— no entities —", "reason": reason}])
 
 
 def weather_table(state: dict) -> pd.DataFrame:
@@ -267,26 +258,10 @@ def forecast_table(state: dict) -> pd.DataFrame:
 def forecast_context_markdown(state: dict) -> str:
     forecast = state.get("forecast")
     classifications = state.get("classifications", [])
-    route = state.get("route", "")
     if not forecast:
         if not classifications:
-            return "⚠️ *Forecast skipped — no signals were classified.*"
-        if "HIGH" in route or "high_path" in route:
-            high_sev = max((getattr(c,"severity",0) for c in classifications), default=0)
-            return (
-                f"⚠️ *Forecast skipped — **per routing spec**, HIGH severity signals (>7) "
-                f"bypass forecast and go straight to simulation "
-                f"(highest signal: {high_sev:.1f}/10).  \n"
-                f"Forecast runs only on MEDIUM (4–7) severity signals.*"
-            )
-        if "LOW" in route or "monitor" in route.lower():
-            severities = ", ".join(f"{c.severity:.1f}" for c in classifications)
-            return (
-                f"⚠️ *Forecast skipped — route is **monitor-only** "
-                f"(signal severities: {severities}).  \n"
-                f"Forecast runs only for MEDIUM (≥4.0) and HIGH (>7.0) signals.*"
-            )
-        return "⚠️ *Forecast skipped — no result available for this route.*"
+            return "⚠️ *Forecast unavailable — no signals were classified.*"
+        return "⚠️ *Forecast unavailable — no result was produced.*"
     category = ""
     if classifications:
         top = max(classifications, key=lambda c: c.severity)
@@ -320,20 +295,11 @@ def evidence_table(state: dict) -> pd.DataFrame:
 
 def simulation_markdown(state: dict) -> str:
     sim = state.get("simulation")
-    route = state.get("route", "")
     classifications = state.get("classifications", []) or []
     if not sim:
         if not classifications:
-            return "⚠️ **Simulation skipped** — no signals were classified."
-        if "LOW" in route or "monitor" in route.lower():
-            severities = ", ".join(f"{c.severity:.1f}" for c in classifications)
-            return (
-                f"⚠️ **Simulation skipped** — route is **monitor-only**.\n\n"
-                f"Signal severities: {severities}. "
-                f"Simulation runs only for MEDIUM (≥4.0) and HIGH (>7.0) severity signals. "
-                f"No stockout risk or revenue impact to report at this severity level."
-            )
-        return "⚠️ **Simulation skipped** — no result available for this route."
+            return "⚠️ **Simulation unavailable** — no signals were classified."
+        return "⚠️ **Simulation unavailable** — no result was produced."
     return (
         f"### Simulation lab\n"
         f"Engine: **{sim.engine or 'local'}**  \n"
