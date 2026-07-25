@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 
+from langsmith import traceable
+
 from agentic_scd.config import Settings, get_settings
 
 
@@ -10,6 +12,7 @@ def mock_completion(prompt: str) -> str:
     return f"[MOCK-LLM:{digest}] offline response for {len(prompt)} characters"
 
 
+@traceable(run_type="llm", name="Groq Chat Completion")
 def completion(prompt: str, *, system: str | None = None, settings: Settings | None = None, model: str | None = None, **kwargs: object) -> str:
     settings = settings or get_settings()
     if settings.llm_is_mock:

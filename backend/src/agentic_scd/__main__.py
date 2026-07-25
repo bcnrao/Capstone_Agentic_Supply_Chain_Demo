@@ -5,10 +5,12 @@ import json
 import logging
 import uuid
 
+from agentic_scd.config import get_settings
 from agentic_scd.db import connect, init_db
 from agentic_scd.graph import GraphState, build_graph
 from agentic_scd.ingestion.collect import collect
 from agentic_scd.ingestion.store import mark_done, save_run_result, serialize_state
+from agentic_scd.observability import build_run_config, configure_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,8 @@ def run(scenario_name: str | None = None, *, use_pending_signals: bool = False) 
     #     collect() DB side-effects making consecutive run() calls return
     #     different signals and breaking determinism tests
     import os
+
+    configure_tracing()
     _in_pytest = "PYTEST_CURRENT_TEST" in os.environ
     if not scenario_name and not use_pending_signals and not _in_pytest:
         try:
@@ -43,7 +47,14 @@ def run(scenario_name: str | None = None, *, use_pending_signals: bool = False) 
         initial["use_pending_signals"] = True
     if scenario_name:
         initial["scenario_name"] = scenario_name
-    result: GraphState = graph.invoke(initial)
+    settings = get_settings()
+    config = build_run_config(
+        run_id=run_id,
+        scenario_name=scenario_name,
+        model_name=settings.groq_model,
+        provider="groq" if not settings.llm_is_mock else "mock",
+    )
+    result: GraphState = graph.invoke(initial, config=config)
     result["run_id"] = run_id
     try:
         init_db()
