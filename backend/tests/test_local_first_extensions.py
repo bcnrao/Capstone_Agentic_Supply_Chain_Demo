@@ -80,7 +80,7 @@ def test_api_run_uses_pending_signals_and_health_reports_modes(tmp_path, monkeyp
         },
     )
     assert posted.status_code == 200
-    response = client.post("/run", json={"use_pending_signals": True})
+    response = client.post("/run", json={})
     assert response.status_code == 200
     payload = response.json()
     assert payload["new_signals"]

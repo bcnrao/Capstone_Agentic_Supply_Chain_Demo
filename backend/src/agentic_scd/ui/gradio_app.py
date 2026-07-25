@@ -98,8 +98,7 @@ def kpi_markdown(state: dict) -> str:
         f"**Active disruption signals:** {active}  \n"
         f"**Stockout probability:** {stockout:.0%}  \n"
         f"**Expected revenue impact:** {revenue:,.0f}  \n"
-        f"**Demand deviation:** {deviation:.1f}%  \n"
-        f"**Route:** {state.get('route', 'not set')}"
+        f"**Demand deviation:** {deviation:.1f}%"
     )
 
 
@@ -123,24 +122,29 @@ def system_markdown(state: dict) -> str:
     )
 
 
+# Column schemas — used so every table renders its real headers even when empty
+# (otherwise Gradio shows a placeholder grid with 1, 2, 3 … headers on load).
+SIGNAL_COLS = ["event_date", "title", "source", "region", "category", "severity", "risk_level", "confidence"]
+RAW_SIGNAL_COLS = ["event_date", "title", "source", "type", "region"]
+ANALYSIS_COLS = ["event_date", "event_type", "region", "severity_hint", "entities", "summary", "context_hits"]
+IMPACT_COLS = ["event_date", "suppliers", "lanes", "facilities", "products", "reasoning"]
+WEATHER_COLS = ["event_date", "hub", "region", "horizon_days", "aggregate_severity", "port_disruption_risk", "peak_day", "operations", "context_hits"]
+FORECAST_COLS = ["week", "baseline (units/wk)", "risk-adjusted", "delta", "change %"]
+RECOMMENDATION_COLS = ["action", "urgency", "expected_impact", "owner"]
+EVIDENCE_COLS = ["evidence"]
+INBOX_COLS = ["event_date", "title", "source", "type", "region", "severity_hint", "status"]
+HISTORY_COLS = ["run_id", "created_at", "scenario_name", "max_severity"]
+
+
 def signals_table(state: dict) -> pd.DataFrame:
     rows = []
     classifications = {item.signal_id: item for item in state.get("classifications", []) or []}
     timestamps = signal_timestamp_map(state)
     for signal in state.get("new_signals", []) or []:
         cls = classifications.get(signal.signal_id)
-        is_fallback = signal.source == "seed_fallback"
-        is_scenario = signal.source == "scenario_library"
-        if is_fallback:
-            label = "[SEED FALLBACK] "
-        elif is_scenario:
-            label = "[SCENARIO] "
-        else:
-            label = "[LIVE] "
         rows.append(
             {
                 "event_date": timestamps.get(signal.signal_id, ""),
-                "title": label + signal.title,
                 "title": signal.title,
                 "source": signal.source,
                 "region": signal.region or "",
@@ -148,10 +152,25 @@ def signals_table(state: dict) -> pd.DataFrame:
                 "severity": cls.severity if cls else 0,
                 "risk_level": cls.risk_level if cls else "",
                 "confidence": cls.confidence if cls else 0,
-                "route": cls.route if cls else "",
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=SIGNAL_COLS)
+
+
+def raw_signals_table(state: dict) -> pd.DataFrame:
+    """Raw signals ingested in this run — no classification/enrichment fields."""
+    timestamps = signal_timestamp_map(state)
+    rows = [
+        {
+            "event_date": timestamps.get(signal.signal_id, ""),
+            "title": signal.title,
+            "source": signal.source,
+            "type": signal.source_type,
+            "region": signal.region or "",
+        }
+        for signal in state.get("new_signals", []) or []
+    ]
+    return pd.DataFrame(rows, columns=RAW_SIGNAL_COLS)
 
 
 def analysis_table(state: dict) -> pd.DataFrame:
@@ -169,7 +188,7 @@ def analysis_table(state: dict) -> pd.DataFrame:
                 "context_hits": len(item.retrieved_context),
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=ANALYSIS_COLS)
 
 
 def impact_table(state: dict) -> pd.DataFrame:
@@ -188,7 +207,7 @@ def impact_table(state: dict) -> pd.DataFrame:
                     "reasoning": impact.reasoning,
                 }
             )
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=IMPACT_COLS)
     # Explain why the table is empty
     classifications = state.get("classifications", []) or []
     if not classifications:
@@ -221,13 +240,13 @@ def weather_table(state: dict) -> pd.DataFrame:
                 "context_hits": len(risk.retrieved_context),
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=WEATHER_COLS)
 
 
 def forecast_table(state: dict) -> pd.DataFrame:
     forecast = state.get("forecast")
     if not forecast:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=FORECAST_COLS)
     rows = []
     for date, base, adj in zip(forecast.dates, forecast.baseline, forecast.adjusted, strict=False):
         delta = round(adj - base, 2)
@@ -282,15 +301,15 @@ def forecast_context_markdown(state: dict) -> str:
 def recommendation_table(state: dict) -> pd.DataFrame:
     rec = state.get("recommendation")
     if not rec:
-        return pd.DataFrame()
-    return pd.DataFrame([item.model_dump() for item in rec.structured_actions])
+        return pd.DataFrame(columns=RECOMMENDATION_COLS)
+    return pd.DataFrame([item.model_dump() for item in rec.structured_actions], columns=RECOMMENDATION_COLS)
 
 
 def evidence_table(state: dict) -> pd.DataFrame:
     rec = state.get("recommendation")
     if not rec:
-        return pd.DataFrame()
-    return pd.DataFrame({"evidence": rec.evidence})
+        return pd.DataFrame(columns=EVIDENCE_COLS)
+    return pd.DataFrame({"evidence": rec.evidence}, columns=EVIDENCE_COLS)
 
 
 def simulation_markdown(state: dict) -> str:
@@ -310,9 +329,26 @@ def simulation_markdown(state: dict) -> str:
         f"Revenue impact mean / p50 / p90: **{sim.revenue_impact:,.0f} / {sim.revenue_loss_p50:,.0f} / {sim.revenue_loss_p90:,.0f}**  \n"
         f"{sim.assumptions}"
     )
-def run_dashboard(scenario: str | None, use_pending_signals: bool) -> tuple:
+def run_start() -> tuple:
+    """Immediate click feedback, before the (possibly slow) pipeline run.
+
+    Gradio's native processing overlay is unreliable on the very first click
+    (queue/websocket still warming up, plus the first run builds the vector
+    store), so we show an explicit running state that works every time.
+    """
+    return (
+        gr.update(value="⏳  Running…", interactive=False),
+        "⏳ *Running the pipeline… the first run also warms up the vector store, so it may take a little longer.*",
+    )
+
+
+def run_done() -> tuple:
+    return gr.update(value="▶  Run pipeline", interactive=True), ""
+
+
+def run_dashboard(scenario: str | None) -> tuple:
     scenario_value = scenario or None
-    state = run(scenario_value, use_pending_signals=use_pending_signals)
+    state = run(scenario_value)
     return (
         kpi_markdown(state),
         system_markdown(state),
@@ -326,7 +362,21 @@ def run_dashboard(scenario: str | None, use_pending_signals: bool) -> tuple:
         recommendation_table(state),
         evidence_table(state),
         json.dumps(serialize_state(state), indent=2, default=str),
+        raw_signals_table(state),
     )
+
+
+def collect_start() -> tuple:
+    """Immediate feedback while external data is fetched."""
+    return (
+        gr.update(value="⏳  Refreshing…", interactive=False),
+        "⏳ *Fetching external data (news, RSS, weather) into the inbox…*",
+    )
+
+
+def collect_done():
+    # Restore the button only — leave collect_status showing the result summary.
+    return gr.update(value="⟳  Refresh external data", interactive=True)
 
 
 def collect_dashboard() -> str:
@@ -343,7 +393,10 @@ def history_table() -> pd.DataFrame:
             rows = recent_runs(conn, 20)
     except Exception:
         rows = []
-    return pd.DataFrame([{key: row[key] for key in ("run_id", "created_at", "scenario_name", "route", "max_severity")} for row in rows])
+    return pd.DataFrame(
+        [{key: row[key] for key in HISTORY_COLS} for row in rows],
+        columns=HISTORY_COLS,
+    )
 
 
 def inbox_table() -> pd.DataFrame:
@@ -365,7 +418,8 @@ def inbox_table() -> pd.DataFrame:
                 "status": "stored",
             }
             for item in signals
-        ]
+        ],
+        columns=INBOX_COLS,
     )
 
 
@@ -427,6 +481,15 @@ def dashboard_css() -> str:
         border-radius: 18px;
         padding: 20px 22px 24px;
         box-shadow: 0 28px 80px rgba(15, 23, 42, 0.24);
+    }
+
+    #control-bar {
+        background: #f2f7fc;
+        border: 1px solid #dce7f2;
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-top: 12px;
+        box-shadow: 0 2px 8px rgba(22, 50, 79, 0.06);
     }
     """
 
@@ -560,12 +623,11 @@ def build_dashboard() -> gr.Blocks:
         gr.HTML(f"<style>{dashboard_css()}</style>")
         gr.Markdown("# Agentic Supply Chain Disruption Predictor & Simulation Engine")
         gr.Markdown("Run a live or packaged scenario, inspect the agent path, and test mitigation choices from one local dashboard.")
-        with gr.Row():
-            scenario = gr.Dropdown(choices=scenarios, value=scenarios[0], label="Scenario")
-            use_pending_signals = gr.Checkbox(label="Use pending DB signals", value=False)
-            run_btn = gr.Button("Run pipeline", variant="primary")
-            collect_btn = gr.Button("Refresh external data")
-            config_btn = gr.Button("Config")
+        with gr.Row(equal_height=True, elem_id="control-bar"):
+            scenario = gr.Dropdown(choices=scenarios, value=scenarios[0], label="Scenario", scale=4)
+            run_btn = gr.Button("▶  Run pipeline", variant="primary", scale=1)
+            collect_btn = gr.Button("⟳  Refresh external data", variant="secondary", scale=1)
+            config_btn = gr.Button("⚙  Config", variant="secondary", scale=1)
         collect_status = gr.Markdown()
         config_inputs = []
         with gr.Column(visible=False, elem_id="config-modal") as config_modal:
@@ -631,26 +693,28 @@ def build_dashboard() -> gr.Blocks:
             with gr.Tab("Executive"):
                 kpis = gr.Markdown()
                 system_card = gr.Markdown()
-                history = gr.Dataframe(label="Recent runs", interactive=False)
+                history = gr.Dataframe(value=pd.DataFrame(columns=HISTORY_COLS), label="Recent runs", interactive=False)
                 refresh_history = gr.Button("Refresh run history")
+            with gr.Tab("Signals"):
+                raw_signals = gr.Dataframe(value=pd.DataFrame(columns=RAW_SIGNAL_COLS), label="Raw signals ingested this run", interactive=False)
             with gr.Tab("Risk monitor"):
-                signals = gr.Dataframe(label="Signals and classification", interactive=False)
-                inbox = gr.Dataframe(label="Stored signal inbox", interactive=False)
+                signals = gr.Dataframe(value=pd.DataFrame(columns=SIGNAL_COLS), label="Signals and classification", interactive=False)
+                inbox = gr.Dataframe(value=pd.DataFrame(columns=INBOX_COLS), label="Stored signal inbox", interactive=False)
                 refresh_inbox = gr.Button("Refresh inbox")
             with gr.Tab("News analysis"):
-                analyses = gr.Dataframe(label="Event extraction and summarization", interactive=False)
+                analyses = gr.Dataframe(value=pd.DataFrame(columns=ANALYSIS_COLS), label="Event extraction and summarization", interactive=False)
             with gr.Tab("Weather risk"):
-                weather = gr.Dataframe(label="7-day hub weather risk", interactive=False)
+                weather = gr.Dataframe(value=pd.DataFrame(columns=WEATHER_COLS), label="7-day hub weather risk", interactive=False)
             with gr.Tab("Impact map"):
-                impacts = gr.Dataframe(label="Affected suppliers, lanes, and facilities", interactive=False)
+                impacts = gr.Dataframe(value=pd.DataFrame(columns=IMPACT_COLS), label="Affected suppliers, lanes, and facilities", interactive=False)
             with gr.Tab("Demand forecast"):
                 forecast_context = gr.Markdown(value="*Run the pipeline to see forecast context.*")
-                forecast = gr.Dataframe(label="Baseline vs risk-adjusted forecast (weekly units)", interactive=False)
+                forecast = gr.Dataframe(value=pd.DataFrame(columns=FORECAST_COLS), label="Baseline vs risk-adjusted forecast (weekly units)", interactive=False)
             with gr.Tab("Simulation"):
                 simulation = gr.Markdown()
             with gr.Tab("Mitigation"):
-                recommendations = gr.Dataframe(label="Ranked action plan", interactive=False)
-                evidence = gr.Dataframe(label="Supporting evidence", interactive=False)
+                recommendations = gr.Dataframe(value=pd.DataFrame(columns=RECOMMENDATION_COLS), label="Ranked action plan", interactive=False)
+                evidence = gr.Dataframe(value=pd.DataFrame(columns=EVIDENCE_COLS), label="Supporting evidence", interactive=False)
             with gr.Tab("Trace JSON"):
                 raw = gr.Code(language="json")
             with gr.Tab("Ask the local KB"):
@@ -663,8 +727,15 @@ def build_dashboard() -> gr.Blocks:
         )
         reload_config.click(reload_config_panel, outputs=config_outputs)
         close_config.click(close_config_panel, outputs=[config_modal])
-        run_btn.click(run_dashboard, inputs=[scenario, use_pending_signals], outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw]).then(history_table, outputs=[history]).then(inbox_table, outputs=[inbox])
-        collect_btn.click(collect_dashboard, outputs=[collect_status]).then(inbox_table, outputs=[inbox])
+        run_btn.click(run_start, outputs=[run_btn, collect_status]).then(
+            run_dashboard, inputs=[scenario],
+            outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw, raw_signals],
+        ).then(history_table, outputs=[history]).then(inbox_table, outputs=[inbox]).then(
+            run_done, outputs=[run_btn, collect_status]
+        )
+        collect_btn.click(collect_start, outputs=[collect_btn, collect_status]).then(
+            collect_dashboard, outputs=[collect_status]
+        ).then(inbox_table, outputs=[inbox]).then(collect_done, outputs=[collect_btn])
         refresh_history.click(history_table, outputs=[history])
         refresh_inbox.click(inbox_table, outputs=[inbox])
         answer_btn.click(ask_network, inputs=[question], outputs=[answer])
