@@ -10,10 +10,15 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     title: "Executive Overview",
     subtitle: "Real-time supply chain risk intelligence and mitigation recommendations",
   },
+  "/signals": {
+    path: "/signals",
+    title: "Signals",
+    subtitle: "Raw disruption signals ingested this run",
+  },
   "/risk": {
     path: "/risk",
-    title: "Risk Monitor",
-    subtitle: "Signals, classification, and stored signal inbox",
+    title: "Classification",
+    subtitle: "Signals and classification",
   },
   "/impact": {
     path: "/impact",

@@ -1,10 +1,8 @@
-import { Button, Card, Space, Table, Tag } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
+import { Card, Space, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 
-import { useSignals } from "../api/hooks";
 import { useDashboard } from "../context/DashboardContext";
-import type { Classification, DisruptionSignal } from "../types/state";
+import type { Classification } from "../types/state";
 
 interface SignalRow {
   key: string;
@@ -15,7 +13,6 @@ interface SignalRow {
   severity: number;
   risk_level: string;
   confidence: number;
-  route: string;
 }
 
 function riskColor(level: string): string {
@@ -31,7 +28,6 @@ function riskColor(level: string): string {
 
 export default function RiskMonitor() {
   const { state } = useDashboard();
-  const { data: inbox, isLoading, refetch, isRefetching } = useSignals();
 
   const classById = new Map<string, Classification>(
     (state?.classifications ?? []).map((item) => [item.signal_id, item]),
@@ -48,7 +44,6 @@ export default function RiskMonitor() {
       severity: cls?.severity ?? 0,
       risk_level: cls?.risk_level ?? "",
       confidence: cls?.confidence ?? 0,
-      route: cls?.route ?? "",
     };
   });
 
@@ -77,19 +72,6 @@ export default function RiskMonitor() {
       key: "confidence",
       render: (value: number) => `${(value * 100).toFixed(0)}%`,
     },
-    { title: "Route", dataIndex: "route", key: "route" },
-  ];
-
-  const inboxColumns: ColumnsType<DisruptionSignal> = [
-    { title: "Title", dataIndex: "title", key: "title", ellipsis: true },
-    { title: "Source", dataIndex: "source", key: "source" },
-    { title: "Type", dataIndex: "source_type", key: "source_type" },
-    {
-      title: "Region",
-      key: "region",
-      render: (_, row) => row.location?.region ?? "",
-    },
-    { title: "Severity hint", dataIndex: "severity_hint", key: "severity_hint" },
   ];
 
   return (
@@ -102,30 +84,6 @@ export default function RiskMonitor() {
           dataSource={signalRows}
           pagination={{ pageSize: 8 }}
           locale={{ emptyText: "Run the pipeline to classify signals" }}
-        />
-      </Card>
-
-      <Card
-        title="Stored signal inbox"
-        size="small"
-        extra={
-          <Button
-            icon={<ReloadOutlined />}
-            size="small"
-            loading={isRefetching}
-            onClick={() => refetch()}
-          >
-            Refresh inbox
-          </Button>
-        }
-      >
-        <Table
-          rowKey="signal_id"
-          size="small"
-          loading={isLoading}
-          columns={inboxColumns}
-          dataSource={inbox ?? []}
-          pagination={{ pageSize: 8 }}
         />
       </Card>
     </Space>

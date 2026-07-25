@@ -55,8 +55,6 @@ export default function TopHeader() {
     state,
     scenario,
     setScenario,
-    usePending,
-    setUsePending,
     setState,
     lastUpdated,
     setLastUpdated,
@@ -109,15 +107,11 @@ export default function TopHeader() {
     try {
       const result = await runPipeline.mutateAsync({
         scenario_name: scenario ?? null,
-        use_pending_signals: usePending,
       });
       setState(result);
       setLastUpdated(new Date());
       setMissionStep("complete");
-      addActivity(
-        `Pipeline completed — route ${result.route ?? "unknown"}`,
-        "success",
-      );
+      addActivity("Pipeline completed", "success");
       message.success("Analysis complete");
     } catch {
       setMissionStep("idle");
@@ -152,20 +146,6 @@ export default function TopHeader() {
 
   const overflowItems = {
     items: [
-      {
-        key: "pending",
-        label: (
-          <label style={{ cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={usePending}
-              onChange={(event) => setUsePending(event.target.checked)}
-              style={{ marginRight: 8 }}
-            />
-            Use pending DB signals
-          </label>
-        ),
-      },
       {
         key: "collect",
         label: "Refresh external data",

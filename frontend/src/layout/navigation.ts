@@ -10,6 +10,7 @@ import {
   GlobalOutlined,
   MessageOutlined,
   SafetyCertificateOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 
 export interface NavItem {
@@ -28,7 +29,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "SITUATION",
     items: [
       { path: "/", label: "Executive", icon: DashboardOutlined },
-      { path: "/risk", label: "Risk Monitor", icon: AlertOutlined },
+      { path: "/signals", label: "Signals", icon: ThunderboltOutlined },
+      { path: "/risk", label: "Classification", icon: AlertOutlined },
       { path: "/impact", label: "Impact Map", icon: GlobalOutlined },
     ],
   },

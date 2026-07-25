@@ -13,7 +13,6 @@ import type {
 
 export interface RunArgs {
   scenario_name: string | null;
-  use_pending_signals: boolean;
 }
 
 export function useHealth() {
