@@ -623,14 +623,31 @@ def weather_retriever() -> LocalRetriever:
     return LocalRetriever("weather", weather_documents)
 
 
-@lru_cache(maxsize=1)
-def impact_retriever() -> LocalRetriever:
-    return LocalRetriever("impact", impact_documents)
+def _semantic_or_local(name: str, provider: Callable[[], list[Document]]):
+    """Impact + Mitigation prefer a real Chroma collection (semantic embeddings);
+    everything else, or any Chroma failure, falls back to the local store."""
+    try:
+        from agentic_scd.rag.chroma_store import ChromaRetriever, chroma_enabled
+
+        if chroma_enabled():
+            return ChromaRetriever(name, provider)
+    except Exception as exc:  # missing model / import / build failure
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "chroma unavailable for '%s' (%s) — using local vector store", name, exc
+        )
+    return LocalRetriever(name, provider)
 
 
 @lru_cache(maxsize=1)
-def mitigation_retriever() -> LocalRetriever:
-    return LocalRetriever("mitigation", mitigation_documents)
+def impact_retriever():
+    return _semantic_or_local("impact", impact_documents)
+
+
+@lru_cache(maxsize=1)
+def mitigation_retriever():
+    return _semantic_or_local("mitigation", mitigation_documents)
 
 
 @lru_cache(maxsize=1)
@@ -649,15 +666,27 @@ def simulation_retriever() -> LocalRetriever:
 
 
 def retrieval_mode() -> str:
-    return impact_retriever().mode
+    # Mode of the local hybrid vector store, which still backs the news, weather,
+    # history, forecast and simulation collections. (Impact + mitigation use a
+    # separate Chroma backend — see semantic_retrieval_backends().)
+    return history_retriever().mode
 
 
-def retriever_stats() -> dict[str, int | str | dict[str, int]]:
+def semantic_retrieval_backends() -> dict[str, str]:
+    """Retriever backend/mode for the two Chroma-capable collections."""
+    return {
+        "impact": impact_retriever().mode,
+        "mitigation": mitigation_retriever().mode,
+    }
+
+
+def retriever_stats() -> dict[str, object]:
     stats = vector_store_stats()
     collections = stats["collections"]
     return {
         "mode": retrieval_mode(),
         "backend": str(stats["backend"]),
+        "semantic_backends": semantic_retrieval_backends(),
         "vector_store_path": str(stats["vector_store_path"]),
         "collections": collections,
         "news_documents": int(collections.get("news", 0)),
