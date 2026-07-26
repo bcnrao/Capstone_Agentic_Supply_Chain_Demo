@@ -77,6 +77,7 @@ export default function TopHeader() {
   }, []);
 
   const scenarioOptions = [
+    { label: "No scenario — use live feed signals", value: "" },
     { label: "Typhoon approaching Shanghai Port", value: "Typhoon approaching Shanghai Port" },
     ...(scenarios ?? [])
       .filter((name) => name !== "Typhoon approaching Shanghai Port")
@@ -171,11 +172,9 @@ export default function TopHeader() {
       <Space wrap className="scd-top-header-actions">
         <Select
           className="scd-scenario-select"
-          placeholder="Select scenario"
           options={scenarioOptions}
-          value={scenario}
+          value={scenario ?? ""}
           onChange={(value) => setScenario(value)}
-          allowClear
           style={{ minWidth: 280 }}
         />
         <Badge status="processing" text={<Text type="secondary">{liveLabel}</Text>} />

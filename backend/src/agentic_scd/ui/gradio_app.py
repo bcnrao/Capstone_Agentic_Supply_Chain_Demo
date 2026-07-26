@@ -125,7 +125,7 @@ def system_markdown(state: dict) -> str:
 # Column schemas — used so every table renders its real headers even when empty
 # (otherwise Gradio shows a placeholder grid with 1, 2, 3 … headers on load).
 SIGNAL_COLS = ["event_date", "title", "source", "region", "category", "severity", "risk_level", "confidence"]
-RAW_SIGNAL_COLS = ["event_date", "title", "source", "type", "region"]
+RAW_SIGNAL_COLS = ["event_date", "title", "source", "source_type", "region"]
 ANALYSIS_COLS = ["event_date", "event_type", "region", "severity_hint", "entities", "summary", "context_hits"]
 IMPACT_COLS = ["event_date", "suppliers", "lanes", "facilities", "products", "reasoning"]
 WEATHER_COLS = ["event_date", "hub", "region", "horizon_days", "aggregate_severity", "port_disruption_risk", "peak_day", "operations", "context_hits"]
@@ -164,12 +164,27 @@ def raw_signals_table(state: dict) -> pd.DataFrame:
             "event_date": timestamps.get(signal.signal_id, ""),
             "title": signal.title,
             "source": signal.source,
-            "type": signal.source_type,
+            "source_type": signal.source_type,
             "region": signal.region or "",
         }
         for signal in state.get("new_signals", []) or []
     ]
     return pd.DataFrame(rows, columns=RAW_SIGNAL_COLS)
+
+
+def raw_signals_note(state: dict) -> str:
+    """Flag when no real signals were found and a seed fallback is being shown."""
+    signals = state.get("new_signals", []) or []
+    if signals and signals[0].source == "seed_fallback":
+        reason = (signals[0].raw_payload or {}).get(
+            "fallback_reason",
+            "No live signals were found in the database.",
+        )
+        return (
+            "⚠️ *No real signals found — showing a **seed fallback** scenario "
+            f"(not a live disruption). {reason}*"
+        )
+    return ""
 
 
 def analysis_table(state: dict) -> pd.DataFrame:
@@ -362,6 +377,7 @@ def run_dashboard(scenario: str | None) -> tuple:
         evidence_table(state),
         json.dumps(serialize_state(state), indent=2, default=str),
         raw_signals_table(state),
+        raw_signals_note(state),
     )
 
 
@@ -590,7 +606,7 @@ def apply_config_panel(*args) -> tuple:
 
 
 def build_dashboard() -> gr.Blocks:
-    scenarios = [""] + scenario_names()
+    scenarios = [("No scenario — use live feed signals", "")] + [(name, name) for name in scenario_names()]
     sections: dict[str, list] = {}
     for field in CONFIG_FIELDS:
         sections.setdefault(field.section, []).append(field)
@@ -599,7 +615,7 @@ def build_dashboard() -> gr.Blocks:
         gr.Markdown("# Agentic Supply Chain Disruption Predictor & Simulation Engine")
         gr.Markdown("Run a live or packaged scenario, inspect the agent path, and test mitigation choices from one local dashboard.")
         with gr.Row(equal_height=True, elem_id="control-bar"):
-            scenario = gr.Dropdown(choices=scenarios, value=scenarios[0], label="Scenario", scale=4)
+            scenario = gr.Dropdown(choices=scenarios, value="", label="Scenario", scale=4)
             run_btn = gr.Button("▶  Run pipeline", variant="primary", scale=1)
             collect_btn = gr.Button("⟳  Refresh external data", variant="secondary", scale=1)
             config_btn = gr.Button("⚙  Config", variant="secondary", scale=1)
@@ -671,6 +687,7 @@ def build_dashboard() -> gr.Blocks:
                 history = gr.Dataframe(value=pd.DataFrame(columns=HISTORY_COLS), label="Recent runs", interactive=False)
                 refresh_history = gr.Button("Refresh run history")
             with gr.Tab("Signals"):
+                signals_note = gr.Markdown()
                 raw_signals = gr.Dataframe(value=pd.DataFrame(columns=RAW_SIGNAL_COLS), label="Raw signals ingested this run", interactive=False)
             with gr.Tab("News analysis"):
                 analyses = gr.Dataframe(value=pd.DataFrame(columns=ANALYSIS_COLS), label="Event extraction and summarization", interactive=False)
@@ -702,7 +719,7 @@ def build_dashboard() -> gr.Blocks:
         close_config.click(close_config_panel, outputs=[config_modal])
         run_btn.click(run_start, outputs=[run_btn, collect_status]).then(
             run_dashboard, inputs=[scenario],
-            outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw, raw_signals],
+            outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw, raw_signals, signals_note],
         ).then(history_table, outputs=[history]).then(
             run_done, outputs=[run_btn, collect_status]
         )
