@@ -38,5 +38,37 @@
     "category": "geopolitical",
     "severity": 6.2,
     "region": "North America"
+  },
+  {
+    "name": "Raw material ingredient shortage",
+    "title": "Glycerin and surfactant shortage squeezes skincare and cosmetics production",
+    "body": "An export restriction on palm-oil-derived glycerin and surfactants has triggered a raw material shortage for skincare and cosmetics manufacturers. Ingredient lead times are stretching and suppliers may need to approve substitute inputs to keep production running.",
+    "category": "raw_material",
+    "severity": 7.6,
+    "region": "China"
+  },
+  {
+    "name": "Viral demand surge for haircare",
+    "title": "Viral trend triggers a demand spike for haircare products",
+    "body": "A viral social-media trend has driven a sudden demand spike for a hero haircare product. Orders surge well ahead of the festive season and the demand forecast now runs far above baseline, raising the risk of stockouts.",
+    "category": "demand_shock",
+    "severity": 7.2,
+    "region": "North America"
+  },
+  {
+    "name": "Minor port delay alert",
+    "title": "Minor weather advisory issued for Rotterdam port",
+    "body": "A low-pressure system is expected to cause brief delays at Rotterdam port. Vessel schedules may shift by one to two days but no major disruptions are anticipated.",
+    "category": "weather",
+    "severity": 2.5,
+    "region": "Netherlands"
+  },
+  {
+    "name": "Routine supplier audit",
+    "title": "Vendor review at manufacturing partner concluded without material findings",
+    "body": "A periodic on-site review at the manufacturing partner found two minor administrative observations on batch records. No operational impact is expected. Remediation is scheduled within 14 days.",
+    "category": "quality",
+    "severity": 1.5,
+    "region": "India"
   }
 ]

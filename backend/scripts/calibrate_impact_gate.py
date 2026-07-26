@@ -30,6 +30,17 @@ SAMPLES = [
     ("N", "Brazil coffee harvest hit by severe drought"),
     ("N", "Suez Canal briefly blocked by a grounded cargo ship"),
     ("N", "Global semiconductor shortage continues to affect the auto industry"),
+    # Implicit on-network events — no exact region/product/place token, so these
+    # exercise the *fuzzy* backstop against the enriched supplier descriptions /
+    # materials (they were the "shows no impact" false-negatives before enrichment).
+    ("E", "Titanium dioxide export curbs raise pigment and colorant costs worldwide"),
+    ("E", "Aroma compound supplier halts shipments, squeezing perfume bottlers"),
+    ("E", "Hyaluronic acid and peptide serum ingredients in short supply"),
+    ("E", "Coconut and argan oil prices surge for shampoo and conditioner makers"),
+    ("E", "Trans-Pacific container backlog delays consumer-goods imports to the US West Coast"),
+    # Implicit off-network noise — must stay above the gate.
+    ("N", "Titanium ore miners strike in Australia over pay dispute"),
+    ("N", "Steel and cement demand slumps amid a construction downturn"),
 ]
 
 

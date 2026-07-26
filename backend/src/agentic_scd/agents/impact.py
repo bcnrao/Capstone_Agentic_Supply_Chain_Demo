@@ -38,8 +38,12 @@ CATEGORY_HINTS = {
 
 # Cosine-distance cutoff for the fuzzy RAG backstop — a signal whose nearest
 # supplier is farther than this (and matched no structured token) is treated as
-# "no material impact". Calibrated on the network KB (see calibrate_impact_gate).
-GATE_DISTANCE = 0.65
+# "no material impact". Calibrated on the enriched network KB (descriptions +
+# materials + aka_ports embedded, see rag.retriever.network_documents and
+# scripts/calibrate_impact_gate.py): implicit on-network events (e.g. an
+# ingredient shortage that never names a node) land ~0.45-0.68, off-network
+# noise ~0.79-0.95, so 0.72 catches the former while clearly rejecting the latter.
+GATE_DISTANCE = 0.72
 
 # Region phrasings in the news that map onto a network region.
 REGION_ALIASES = {

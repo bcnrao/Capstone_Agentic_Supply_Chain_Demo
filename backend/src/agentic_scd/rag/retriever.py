@@ -107,12 +107,39 @@ def parse_json(value):
     return json.loads(value)
 
 
+def _clean_text(parts) -> str:
+    """Flatten a mix of scalars and list-valued fields into clean space-joined
+    text for embedding — dropping None and blanks, and skipping the numeric
+    junk fields (reliability, cost_index, days) that only dilute the vector."""
+    out: list[str] = []
+    for part in parts:
+        if part is None or part == "":
+            continue
+        if isinstance(part, (list, tuple)):
+            out.extend(str(x) for x in part if str(x).strip())
+        else:
+            out.append(str(part))
+    return " ".join(s for s in out if s.strip()).strip()
+
+
+# Which fields of each Network KB section carry semantic signal worth embedding.
+# Descriptions / materials / aka_ports / keywords are the enrichment that lets the
+# impact agent's fuzzy backstop match live news that never names an exact node.
+_NETWORK_EMBED_FIELDS = {
+    "suppliers": ("name", "region", "products", "description", "materials", "aka_ports", "primary_lane"),
+    "facilities": ("name", "region", "type", "description", "keywords", "lanes"),
+    "lanes": ("name", "mode", "description"),
+}
+
+
 def network_documents() -> list[Document]:
     data = read_json(SEED_DIR / "network.json", {})
     docs: list[Document] = []
-    for section in ("suppliers", "facilities", "lanes"):
+    for section, fields in _NETWORK_EMBED_FIELDS.items():
         for idx, row in enumerate(data.get(section, [])):
-            text = " ".join(str(value) for value in row.values())
+            text = _clean_text([row.get(field) for field in fields])
+            if not text:  # tolerate a node missing the enrichment fields
+                text = _clean_text(list(row.values()))
             docs.append(Document(doc_id=f"{section}-{idx}", text=text, metadata={"kind": section, **row}))
     return docs
 

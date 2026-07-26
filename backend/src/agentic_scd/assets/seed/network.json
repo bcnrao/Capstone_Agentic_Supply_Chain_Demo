@@ -9,7 +9,22 @@
       ],
       "reliability": 0.74,
       "alt_supplier": "Supplier C",
-      "primary_lane": "Shanghai-Los Angeles"
+      "primary_lane": "Shanghai-Los Angeles",
+      "description": "Contract manufacturer near Shanghai producing colour cosmetics and skincare creams for export; ships containers from Shanghai and Ningbo on the trans-Pacific lane to Los Angeles.",
+      "materials": [
+        "glycerin",
+        "titanium dioxide",
+        "surfactants",
+        "emulsifiers",
+        "pigments",
+        "glass bottles",
+        "aluminium caps"
+      ],
+      "aka_ports": [
+        "Shanghai",
+        "Ningbo",
+        "Yangshan"
+      ]
     },
     {
       "name": "Supplier B",
@@ -20,7 +35,21 @@
       ],
       "reliability": 0.81,
       "alt_supplier": "Supplier D",
-      "primary_lane": "Mumbai-Rotterdam"
+      "primary_lane": "Mumbai-Rotterdam",
+      "description": "Mumbai-based manufacturer of haircare oils and wellness formulations; exports through Nhava Sheva (JNPT) and Mumbai port on the India-Europe lane to Rotterdam.",
+      "materials": [
+        "coconut oil",
+        "argan oil",
+        "herbal actives",
+        "botanical extracts",
+        "HDPE bottles",
+        "cartons"
+      ],
+      "aka_ports": [
+        "Mumbai",
+        "Nhava Sheva",
+        "JNPT"
+      ]
     },
     {
       "name": "Supplier C",
@@ -31,7 +60,20 @@
       ],
       "reliability": 0.86,
       "alt_supplier": "Supplier A",
-      "primary_lane": "Ho Chi Minh-Los Angeles"
+      "primary_lane": "Ho Chi Minh-Los Angeles",
+      "description": "Vietnam contract manufacturer of cosmetics and fragrance products near Ho Chi Minh City; ships from Cat Lai and Cai Mep ports on the trans-Pacific lane to Los Angeles.",
+      "materials": [
+        "fragrance oils",
+        "aroma compounds",
+        "ethanol",
+        "glass vials",
+        "spray pumps"
+      ],
+      "aka_ports": [
+        "Ho Chi Minh",
+        "Cat Lai",
+        "Cai Mep"
+      ]
     },
     {
       "name": "Supplier D",
@@ -42,7 +84,19 @@
       ],
       "reliability": 0.88,
       "alt_supplier": "Supplier B",
-      "primary_lane": "Rotterdam-New York"
+      "primary_lane": "Rotterdam-New York",
+      "description": "Netherlands supplier of premium skincare and wellness lines distributed through the Port of Rotterdam; feeds the Rotterdam DC and the trans-Atlantic lane to New York.",
+      "materials": [
+        "hyaluronic acid",
+        "peptides",
+        "plant sterols",
+        "serum bottles",
+        "droppers"
+      ],
+      "aka_ports": [
+        "Rotterdam",
+        "Europoort"
+      ]
     },
     {
       "name": "Supplier E",
@@ -53,7 +107,18 @@
       ],
       "reliability": 0.79,
       "alt_supplier": "Supplier D",
-      "primary_lane": "Los Angeles-Dallas"
+      "primary_lane": "Los Angeles-Dallas",
+      "description": "US-based supplier of fragrance and haircare products serving domestic replenishment by road from Los Angeles to Dallas.",
+      "materials": [
+        "fragrance concentrates",
+        "conditioning polymers",
+        "aerosol cans",
+        "labels"
+      ],
+      "aka_ports": [
+        "Los Angeles",
+        "Long Beach"
+      ]
     }
   ],
   "facilities": [
@@ -64,6 +129,16 @@
       "lanes": [
         "Shanghai-Los Angeles",
         "Shanghai-Rotterdam"
+      ],
+      "description": "Container consolidation hub at the Port of Shanghai; primary export gateway for China-sourced cosmetics and skincare on the trans-Pacific and Asia-Europe lanes.",
+      "keywords": [
+        "Shanghai",
+        "Ningbo",
+        "Yangshan",
+        "port",
+        "container",
+        "consolidation",
+        "trans-Pacific"
       ]
     },
     {
@@ -73,6 +148,15 @@
       "lanes": [
         "Mumbai-Rotterdam",
         "Rotterdam-New York"
+      ],
+      "description": "European distribution centre at the Port of Rotterdam handling India-Europe imports and trans-Atlantic outbound shipments to New York.",
+      "keywords": [
+        "Rotterdam",
+        "Europoort",
+        "warehouse",
+        "distribution",
+        "Europe",
+        "import"
       ]
     },
     {
@@ -83,6 +167,15 @@
         "Shanghai-Los Angeles",
         "Ho Chi Minh-Los Angeles",
         "Los Angeles-Dallas"
+      ],
+      "description": "West Coast import distribution centre receiving trans-Pacific cargo from Shanghai and Ho Chi Minh and feeding the domestic road lane to Dallas.",
+      "keywords": [
+        "Los Angeles",
+        "Long Beach",
+        "import",
+        "warehouse",
+        "West Coast",
+        "trans-Pacific"
       ]
     },
     {
@@ -92,6 +185,15 @@
       "lanes": [
         "Mumbai-Rotterdam",
         "Mumbai-Dubai"
+      ],
+      "description": "Blending and filling plant near Bangalore producing wellness and skincare formulations for the India-Europe and India-Middle East lanes.",
+      "keywords": [
+        "Bangalore",
+        "Bengaluru",
+        "plant",
+        "blending",
+        "filling",
+        "India"
       ]
     }
   ],
@@ -100,37 +202,43 @@
       "name": "Shanghai-Los Angeles",
       "mode": "Sea",
       "days": 17,
-      "cost_index": 1.0
+      "cost_index": 1.0,
+      "description": "Trans-Pacific sea lane from Shanghai to Los Angeles carrying China-sourced cosmetics and skincare."
     },
     {
       "name": "Ho Chi Minh-Los Angeles",
       "mode": "Sea",
       "days": 19,
-      "cost_index": 0.94
+      "cost_index": 0.94,
+      "description": "Trans-Pacific sea lane from Ho Chi Minh City to Los Angeles carrying Vietnam-sourced cosmetics and fragrance."
     },
     {
       "name": "Mumbai-Rotterdam",
       "mode": "Sea",
       "days": 21,
-      "cost_index": 0.88
+      "cost_index": 0.88,
+      "description": "India-Europe sea lane from Mumbai (Nhava Sheva) to Rotterdam carrying haircare and wellness goods."
     },
     {
       "name": "Rotterdam-New York",
       "mode": "Sea",
       "days": 13,
-      "cost_index": 0.91
+      "cost_index": 0.91,
+      "description": "Trans-Atlantic sea lane from Rotterdam to New York carrying skincare and wellness lines."
     },
     {
       "name": "Los Angeles-Dallas",
       "mode": "Road",
       "days": 4,
-      "cost_index": 0.67
+      "cost_index": 0.67,
+      "description": "Domestic US road lane from Los Angeles to Dallas for inland replenishment."
     },
     {
       "name": "Mumbai-Dubai",
       "mode": "Air",
       "days": 2,
-      "cost_index": 1.8
+      "cost_index": 1.8,
+      "description": "India-Middle East air lane from Mumbai to Dubai for expedited high-value shipments."
     }
   ]
 }
