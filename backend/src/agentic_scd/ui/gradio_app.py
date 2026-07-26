@@ -128,6 +128,7 @@ SIGNAL_COLS = ["event_date", "title", "source", "region", "category", "severity"
 RAW_SIGNAL_COLS = ["event_date", "title", "source", "source_type", "region"]
 ANALYSIS_COLS = ["event_date", "event_type", "region", "severity_hint", "entities", "summary", "context_hits"]
 IMPACT_COLS = ["event_date", "suppliers", "lanes", "facilities", "products", "reasoning"]
+DONTCARE_COLS = ["event_date", "event", "category", "reason"]
 WEATHER_COLS = ["event_date", "hub", "region", "horizon_days", "aggregate_severity", "port_disruption_risk", "peak_day", "operations", "context_hits"]
 FORECAST_COLS = ["week", "baseline (units/wk)", "risk-adjusted", "delta", "change %"]
 RECOMMENDATION_COLS = ["action", "urgency", "expected_impact", "owner"]
@@ -205,36 +206,53 @@ def analysis_table(state: dict) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=ANALYSIS_COLS)
 
 
+def impact_summary_markdown(state: dict) -> str:
+    """AI-written impact summary (deterministic fallback), produced by impact_node."""
+    if not (state.get("impacts") or []):
+        return "*Run the pipeline to see the impact assessment.*"
+    return "### 🧠 Impact summary\n" + (state.get("impact_summary") or "Impact assessment complete.")
+
+
 def impact_table(state: dict) -> pd.DataFrame:
-    impacts = state.get("impacts") or []
-    if impacts:
-        rows = []
-        timestamps = signal_timestamp_map(state)
-        for impact in impacts:
-            rows.append(
-                {
-                    "event_date": timestamps.get(impact.signal_id, ""),
-                    "suppliers": ", ".join(impact.affected_suppliers),
-                    "lanes": ", ".join(impact.affected_lanes),
-                    "facilities": ", ".join(impact.affected_facilities),
-                    "products": ", ".join(impact.product_categories),
-                    "reasoning": impact.reasoning,
-                }
-            )
-        return pd.DataFrame(rows, columns=IMPACT_COLS)
-    # Explain why the table is empty
-    classifications = state.get("classifications", []) or []
-    if not classifications:
-        reason = "No signals classified — pipeline did not reach the impact agent."
-    elif all(getattr(c, "severity", 0) < 3 for c in classifications):
-        severities = ", ".join(f"{c.severity:.1f}" for c in classifications)
-        reason = (
-            f"No entities mapped — all signal severities ({severities}) are below "
-            f"the 3.0 impact threshold."
-        )
-    else:
-        reason = "Impact mapping ran but returned no results."
-    return pd.DataFrame([{"status": "— no entities —", "reason": reason}])
+    """Affected entities — only signals with a material network impact."""
+    timestamps = signal_timestamp_map(state)
+    rows = [
+        {
+            "event_date": timestamps.get(impact.signal_id, ""),
+            "suppliers": ", ".join(impact.affected_suppliers),
+            "lanes": ", ".join(impact.affected_lanes),
+            "facilities": ", ".join(impact.affected_facilities),
+            "products": ", ".join(impact.product_categories),
+            "reasoning": impact.reasoning,
+        }
+        for impact in (state.get("impacts") or [])
+        if impact.affected_entities
+    ]
+    return pd.DataFrame(rows, columns=IMPACT_COLS)
+
+
+def dontcare_table(state: dict) -> pd.DataFrame:
+    """Don't-care events — classified but no monitored entity is materially exposed."""
+    timestamps = signal_timestamp_map(state)
+    signals = {s.signal_id: s for s in state.get("new_signals", []) or []}
+    categories = {c.signal_id: c.category for c in state.get("classifications", []) or []}
+    rows = [
+        {
+            "event_date": timestamps.get(impact.signal_id, ""),
+            "event": signals[impact.signal_id].title if impact.signal_id in signals else "",
+            "category": categories.get(impact.signal_id, ""),
+            "reason": impact.reasoning,
+        }
+        for impact in (state.get("impacts") or [])
+        if not impact.affected_entities
+    ]
+    return pd.DataFrame(rows, columns=DONTCARE_COLS)
+
+
+def dontcare_update(state: dict):
+    """Populate the don't-care table and hide it entirely when there are none."""
+    df = dontcare_table(state)
+    return gr.update(value=df, visible=not df.empty)
 
 
 def weather_table(state: dict) -> pd.DataFrame:
@@ -378,6 +396,8 @@ def run_dashboard(scenario: str | None) -> tuple:
         json.dumps(serialize_state(state), indent=2, default=str),
         raw_signals_table(state),
         raw_signals_note(state),
+        impact_summary_markdown(state),
+        dontcare_update(state),
     )
 
 
@@ -696,7 +716,9 @@ def build_dashboard() -> gr.Blocks:
             with gr.Tab("Classification"):
                 signals = gr.Dataframe(value=pd.DataFrame(columns=SIGNAL_COLS), label="Signals and classification", interactive=False)
             with gr.Tab("Impact map"):
-                impacts = gr.Dataframe(value=pd.DataFrame(columns=IMPACT_COLS), label="Affected suppliers, lanes, and facilities", interactive=False)
+                impact_summary = gr.Markdown()
+                impacts = gr.Dataframe(value=pd.DataFrame(columns=IMPACT_COLS), label="Affected entities (material impact)", interactive=False)
+                dontcare = gr.Dataframe(value=pd.DataFrame(columns=DONTCARE_COLS), label="Don't-care (no material impact — monitored only)", interactive=False, visible=False)
             with gr.Tab("Demand forecast"):
                 forecast_context = gr.Markdown(value="*Run the pipeline to see forecast context.*")
                 forecast = gr.Dataframe(value=pd.DataFrame(columns=FORECAST_COLS), label="Baseline vs risk-adjusted forecast (weekly units)", interactive=False)
@@ -719,7 +741,7 @@ def build_dashboard() -> gr.Blocks:
         close_config.click(close_config_panel, outputs=[config_modal])
         run_btn.click(run_start, outputs=[run_btn, collect_status]).then(
             run_dashboard, inputs=[scenario],
-            outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw, raw_signals, signals_note],
+            outputs=[kpis, system_card, analyses, weather, signals, impacts, forecast_context, forecast, simulation, recommendations, evidence, raw, raw_signals, signals_note, impact_summary, dontcare],
         ).then(history_table, outputs=[history]).then(
             run_done, outputs=[run_btn, collect_status]
         )

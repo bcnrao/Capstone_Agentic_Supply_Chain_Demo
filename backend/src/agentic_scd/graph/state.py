@@ -12,6 +12,7 @@ class GraphState(TypedDict, total=False):
     weather_risks: list[WeatherRiskAssessment]
     classifications: list[Classification]
     impacts: list[ImpactMap]
+    impact_summary: str
     forecast: Forecast
     simulation: Simulation
     recommendation: Recommendation

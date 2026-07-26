@@ -82,13 +82,19 @@ def build_forecast(classifications: list[Classification], impacts: list[ImpactMa
     baseline, baseline_source, model_name = baseline_projection(HORIZON)
     freight_delta, freight_source = freight_pressure()
     retrieved_context, context_pressure = forecast_context(classifications, impacts)
-    adjusted, disruption_factor = adjusted_projection(baseline, risk, len(impacts), freight_delta + context_pressure, dominant_category)
+    # No affected network entities => no material impact: keep the forecast flat
+    # (adjusted == baseline) regardless of the event's intrinsic risk.
+    affected = sum(len(item.affected_entities) for item in impacts)
+    if affected <= 0:
+        adjusted, disruption_factor = [round(v, 2) for v in baseline], 0.0
+    else:
+        adjusted, disruption_factor = adjusted_projection(baseline, risk, affected, freight_delta + context_pressure, dominant_category)
     dates = [(date.today() + timedelta(days=7 * idx)).isoformat() for idx in range(HORIZON)]
     deviation = 0.0 if not baseline else round(100 * (sum(adjusted) - sum(baseline)) / sum(baseline), 2)
     mean_adjusted = float(np.mean(adjusted)) if adjusted else 0.0
     mean_baseline = float(np.mean(baseline)) if baseline else 1.0
     inventory_days = round(max(1.0, 26 * (1 - risk) + 4), 1)
-    delay = round(max(0.0, risk * 12 + len(impacts) * 0.7 + max(0.0, freight_delta) * 18), 1)
+    delay = round(max(0.0, risk * 12 + affected * 0.7 + max(0.0, freight_delta) * 18), 1)
     mape = round(abs(mean_baseline - mean_adjusted) / max(mean_baseline, 1.0), 4)
     if baseline_source == "database":
         note = f"Baseline source: persisted DATASET history in the configured database, adjusted by aggregate risk {risk:.2f}."

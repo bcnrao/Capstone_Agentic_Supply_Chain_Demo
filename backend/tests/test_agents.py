@@ -53,27 +53,42 @@ def test_classify_node_over_batch() -> None:
     assert out["classifications"][0].category == "policy"
 
 
-def test_impact_node_returns_entities() -> None:
+def test_impact_node_maps_to_network() -> None:
+    signal = make_signal("Typhoon hits Shanghai port", "shipping disrupted at the Shanghai hub")
     state = {
-        "classifications": [
-            Classification(signal_id="x", category="natural_disaster", risk_score=0.9)
-        ]
+        "new_signals": [signal],
+        "classifications": [Classification(signal_id="sig-1", category="weather", risk_score=0.9)],
     }
-    out = impact_node(state)
-    impacts = out["impacts"]
+    impacts = impact_node(state)["impacts"]
+    assert len(impacts) == 1 and isinstance(impacts[0], ImpactMap)
+    # Shanghai grounds to Supplier A + the Shanghai-Los Angeles lane, with products.
+    assert impacts[0].affected_suppliers
+    assert "Shanghai-Los Angeles" in impacts[0].affected_lanes
+    assert impacts[0].product_categories  # products now populate (was the bug)
+
+
+def test_impact_node_no_material_impact() -> None:
+    signal = make_signal(
+        "Australian iron ore miners strike at Port Hedland",
+        "iron ore export halt in Western Australia",
+    )
+    state = {
+        "new_signals": [signal],
+        "classifications": [Classification(signal_id="sig-1", category="labor_strike", risk_score=0.85)],
+    }
+    impacts = impact_node(state)["impacts"]
     assert len(impacts) == 1
-    assert isinstance(impacts[0], ImpactMap)
-    assert "Taiwan chip supplier" in impacts[0].affected_entities
+    assert impacts[0].affected_entities == []  # nothing in our network is exposed
 
 
-def test_forecast_bends_under_risk() -> None:
+def test_forecast_bends_under_material_impact() -> None:
     classifications = [Classification(signal_id="x", category="labor", risk_score=0.8)]
-    out = forecast_node({"classifications": classifications})
-    f: Forecast = out["forecast"]
+    impacts = [ImpactMap(signal_id="x", affected_suppliers=["Supplier A"], affected_lanes=["Shanghai-Los Angeles"])]
+    f: Forecast = forecast_node({"classifications": classifications, "impacts": impacts})["forecast"]
     assert len(f.baseline) == HORIZON and len(f.adjusted) == HORIZON
-    assert f.adjusted[-1] < f.baseline[-1]  # demand visibly dips under risk
-    # No risk -> no bend.
-    flat = forecast_node({"classifications": []})["forecast"]
+    assert f.adjusted[-1] < f.baseline[-1]  # demand dips under a material impact
+    # No material impact -> flat, even at nonzero risk.
+    flat = forecast_node({"classifications": classifications, "impacts": []})["forecast"]
     assert flat.adjusted == flat.baseline
 
 

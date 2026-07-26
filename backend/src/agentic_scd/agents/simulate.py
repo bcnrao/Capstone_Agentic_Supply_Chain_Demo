@@ -46,8 +46,10 @@ def run_simulation(classifications: list[Classification], impacts: list[ImpactMa
     n = iterations or settings.simulation_iterations
     risk = aggregate_risk(classifications)
     affected = sum(len(item.affected_entities) for item in impacts)
-    if risk <= 0 and affected <= 0:
-        return Simulation(stockout_probability=0.0, revenue_impact=0.0, recovery_time_days=0.0, service_level=1.0, expected_shortage_units=0.0, iterations=n, assumptions="No active risk or affected network nodes.", engine="discrete_event_local")
+    # No affected network entities => no material impact on our chain, even at
+    # high risk: the disruption doesn't touch anything we operate.
+    if affected <= 0:
+        return Simulation(stockout_probability=0.0, revenue_impact=0.0, recovery_time_days=0.0, service_level=1.0, expected_shortage_units=0.0, iterations=n, assumptions="No affected network nodes — no material impact simulated.", engine="discrete_event_local")
     retrieved_context, calibration = simulation_context(classifications, impacts, forecast)
     data = run_discrete_event(classifications, impacts, forecast, n)
     stockout_probability = min(1.0, float(data["stockout_probability"]) * min(1.05, calibration))

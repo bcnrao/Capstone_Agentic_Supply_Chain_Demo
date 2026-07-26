@@ -81,57 +81,93 @@ class ChromaRetriever:
 
     mode = CHROMA_MODE
 
-    def __init__(self, collection_name: str, provider: Callable[[], list[Document]]) -> None:
+    def __init__(
+        self,
+        collection_name: str,
+        provider: Callable[[], list[Document]],
+        space: str | None = None,
+    ) -> None:
         import chromadb  # imported after chroma_enabled() gate
 
         self.collection_name = collection_name
         self._provider = provider
+        self._space = space  # e.g. "cosine" for interpretable 0..2 distances
         self._client = chromadb.PersistentClient(path=str(_chroma_path()))
         self._collection = self._build()  # eager: surfaces model/download errors now
 
     def _build(self):
         docs = [d for d in unique_documents(self._provider()) if (d.text or "").strip()]
         sig = _signature(docs)
+        space = self._space or "default"
         name = self.collection_name
         try:
             existing = self._client.get_collection(name)
-            if (existing.metadata or {}).get("sig") == sig and existing.count() == len(docs):
+            meta = existing.metadata or {}
+            if meta.get("sig") == sig and meta.get("space") == space and existing.count() == len(docs):
                 return existing
             self._client.delete_collection(name)
         except Exception:
             pass  # collection absent or unreadable — (re)create below
-        collection = self._client.create_collection(name, metadata={"sig": sig})
+        metadata: dict = {"sig": sig, "space": space}
+        if self._space:
+            metadata["hnsw:space"] = self._space
+        collection = self._client.create_collection(name, metadata=metadata)
         if docs:
             collection.add(
                 ids=[d.doc_id for d in docs],
                 documents=[d.text for d in docs],
                 metadatas=[_flatten_metadata(d.metadata) for d in docs],
             )
-        logger.info("chroma collection '%s' built with %d documents", name, len(docs))
+        logger.info("chroma collection '%s' built with %d documents (space=%s)", name, len(docs), space)
         return collection
 
-    def search(self, query: str, top_k: int = 4, category: str | None = None) -> list[Document]:
+    @staticmethod
+    def _where(category: str | None, kind: str | None) -> dict | None:
+        clauses = []
+        if category:
+            clauses.append({"category": category})
+        if kind:
+            clauses.append({"kind": kind})
+        if not clauses:
+            return None
+        return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+
+    def search_scored(
+        self, query: str, top_k: int = 4, category: str | None = None, kind: str | None = None
+    ) -> list[tuple[Document, float]]:
+        """Like search() but returns (Document, distance). With space='cosine'
+        the distance is a 0..2 cosine distance (0 = identical)."""
         text = (query or "").strip()
         if not text:
             return []
-        where = {"category": category} if category else None
         try:
-            res = self._collection.query(query_texts=[text], n_results=top_k, where=where)
+            res = self._collection.query(
+                query_texts=[text],
+                n_results=top_k,
+                where=self._where(category, kind),
+                include=["documents", "metadatas", "distances"],
+            )
         except Exception as exc:
             logger.warning("chroma query failed on '%s' (%s)", self.collection_name, exc)
             return []
         ids = (res.get("ids") or [[]])[0]
         texts = (res.get("documents") or [[]])[0]
         metas = (res.get("metadatas") or [[]])[0]
-        out: list[Document] = []
-        for doc_id, doc_text, meta in zip(ids, texts, metas, strict=False):
+        dists = (res.get("distances") or [[]])[0]
+        out: list[tuple[Document, float]] = []
+        for doc_id, doc_text, meta, dist in zip(ids, texts, metas, dists, strict=False):
             blob = meta.get("_meta_json") if isinstance(meta, dict) else None
             try:
                 original = json.loads(blob) if blob else {}
             except Exception:
                 original = {}
-            out.append(Document(doc_id=str(doc_id), text=str(doc_text), metadata=original))
+            out.append((Document(doc_id=str(doc_id), text=str(doc_text), metadata=original), float(dist)))
         return out
+
+    def search(
+        self, query: str, top_k: int = 4, category: str | None = None, kind: str | None = None
+    ) -> list[Document]:
+        return [doc for doc, _ in self.search_scored(query, top_k, category, kind)]
 
     @property
     def documents(self) -> list[Document]:

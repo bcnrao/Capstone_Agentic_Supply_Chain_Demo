@@ -87,6 +87,25 @@ def llm_recommendation(classifications: list[Classification], impacts: list[Impa
 
 
 def build_recommendation(classifications: list[Classification], impacts: list[ImpactMap], simulation: Simulation) -> Recommendation:
+    # No affected network entities => no material impact: nothing to mitigate,
+    # just keep watching the event.
+    affected = sum(len(item.affected_entities) for item in impacts)
+    if classifications and affected <= 0:
+        category = max(classifications, key=lambda c: c.severity).category
+        action = MitigationAction(
+            action=f"Monitor only — this {category} event does not materially impact the monitored network. Keep watching for escalation.",
+            urgency="low",
+            expected_impact="No action required while the event stays outside our supplier, lane and facility footprint.",
+            owner="Control tower analyst",
+        )
+        return Recommendation(
+            actions=[f"[{action.urgency.upper()}] {action.action} Owner: {action.owner}."],
+            structured_actions=[action],
+            summary=f"No material impact to the monitored network from this {category} event — monitoring only.",
+            evidence=[],
+            generation_mode="no_material_impact",
+        )
+
     structured: list[MitigationAction] = []
     evidence: list[str] = []
     categories = list(dict.fromkeys(item.category for item in classifications)) or ["other"]

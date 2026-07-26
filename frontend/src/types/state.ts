@@ -128,6 +128,7 @@ export interface PipelineState {
   weather_risks?: WeatherRiskAssessment[];
   classifications?: Classification[];
   impacts?: ImpactMap[];
+  impact_summary?: string;
   forecast?: Forecast | null;
   simulation?: Simulation | null;
   recommendation?: Recommendation | null;

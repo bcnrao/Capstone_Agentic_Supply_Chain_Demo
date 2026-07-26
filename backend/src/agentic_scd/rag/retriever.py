@@ -516,10 +516,13 @@ def _fallback_search(
     query: str,
     top_k: int,
     category: str | None = None,
+    kind: str | None = None,
 ) -> list[Document]:
     ranked: list[tuple[float, Document]] = []
     for document in unique_documents(documents):
         if category and document.metadata.get("category") != category:
+            continue
+        if kind and document.metadata.get("kind") != kind:
             continue
         score = score_document(query, document)
         if score > MIN_SCORE:
@@ -535,6 +538,7 @@ def search_collection(
     query: str,
     top_k: int = 4,
     category: str | None = None,
+    kind: str | None = None,
     settings: Settings | None = None,
 ) -> list[Document]:
     settings = settings or get_settings()
@@ -544,6 +548,8 @@ def search_collection(
         for document, stored_vector in _stored_documents(collection_name, provider, settings):
             if category and document.metadata.get("category") != category:
                 continue
+            if kind and document.metadata.get("kind") != kind:
+                continue
             dense = 0.0 if not np.any(qv) or not np.any(stored_vector) else float(np.dot(qv, stored_vector))
             score = score_document(query, document, dense)
             if score > MIN_SCORE:
@@ -551,7 +557,7 @@ def search_collection(
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [document for _, document in ranked[:top_k]]
     except Exception:
-        return _fallback_search(provider(), query, top_k, category)
+        return _fallback_search(provider(), query, top_k, category, kind)
 
 
 def rebuild_vector_store(
@@ -609,8 +615,29 @@ class LocalRetriever:
     def score(self, query: str, document: Document) -> float:
         return score_document(query, document)
 
-    def search(self, query: str, top_k: int = 4, category: str | None = None) -> list[Document]:
-        return search_collection(self.collection_name, self._documents, query, top_k=top_k, category=category)
+    def search(
+        self, query: str, top_k: int = 4, category: str | None = None, kind: str | None = None
+    ) -> list[Document]:
+        return search_collection(
+            self.collection_name, self._documents, query, top_k=top_k, category=category, kind=kind
+        )
+
+    def search_scored(
+        self, query: str, top_k: int = 4, category: str | None = None, kind: str | None = None
+    ) -> list[tuple[Document, float]]:
+        """Mirror of ChromaRetriever.search_scored for the local backend. The
+        distance is a pseudo cosine-distance (1 - hybrid score, lower = better)
+        so a single threshold works across both backends — approximate on the
+        local store, so callers should lean on the structured gate there."""
+        ranked: list[tuple[float, Document]] = []
+        for document in unique_documents(self._documents()):
+            if category and document.metadata.get("category") != category:
+                continue
+            if kind and document.metadata.get("kind") != kind:
+                continue
+            ranked.append((score_document(query, document), document))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [(doc, round(max(0.0, 1.0 - s), 4)) for s, doc in ranked[:top_k]]
 
 
 @lru_cache(maxsize=1)
@@ -623,14 +650,14 @@ def weather_retriever() -> LocalRetriever:
     return LocalRetriever("weather", weather_documents)
 
 
-def _semantic_or_local(name: str, provider: Callable[[], list[Document]]):
-    """Impact + Mitigation prefer a real Chroma collection (semantic embeddings);
+def _semantic_or_local(name: str, provider: Callable[[], list[Document]], space: str | None = None):
+    """Network + Mitigation prefer a real Chroma collection (semantic embeddings);
     everything else, or any Chroma failure, falls back to the local store."""
     try:
         from agentic_scd.rag.chroma_store import ChromaRetriever, chroma_enabled
 
         if chroma_enabled():
-            return ChromaRetriever(name, provider)
+            return ChromaRetriever(name, provider, space=space)
     except Exception as exc:  # missing model / import / build failure
         import logging
 
@@ -638,6 +665,13 @@ def _semantic_or_local(name: str, provider: Callable[[], list[Document]]):
             "chroma unavailable for '%s' (%s) — using local vector store", name, exc
         )
     return LocalRetriever(name, provider)
+
+
+@lru_cache(maxsize=1)
+def network_retriever():
+    # Network KB only (suppliers / facilities / lanes), cosine space so the
+    # impact agent can threshold on an interpretable 0..2 distance.
+    return _semantic_or_local("network", network_documents, space="cosine")
 
 
 @lru_cache(maxsize=1)
@@ -673,9 +707,10 @@ def retrieval_mode() -> str:
 
 
 def semantic_retrieval_backends() -> dict[str, str]:
-    """Retriever backend/mode for the two Chroma-capable collections."""
+    """Retriever backend/mode for the Chroma-capable collections (impact maps
+    against the network KB; mitigation against the playbook KB)."""
     return {
-        "impact": impact_retriever().mode,
+        "network": network_retriever().mode,
         "mitigation": mitigation_retriever().mode,
     }
 
