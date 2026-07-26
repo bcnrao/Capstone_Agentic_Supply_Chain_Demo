@@ -30,7 +30,7 @@ def read_new_signals(conn) -> list:
 def ingestion_node(state: "GraphState") -> dict:
     if state.get("new_signals"):
         return {}
-    if state.get("scenario_name"):
+    if state.get("scenario_names"):
         return {"new_signals": []}
     try:
         init_db()

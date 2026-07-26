@@ -29,8 +29,8 @@ export interface ActivityEntry {
 interface DashboardContextValue {
   state: PipelineState | undefined;
   setState: (state: PipelineState | undefined) => void;
-  scenario: string | undefined;
-  setScenario: (scenario: string | undefined) => void;
+  scenarios: string[];
+  setScenarios: (scenarios: string[]) => void;
   lastUpdated: Date | undefined;
   setLastUpdated: (date: Date | undefined) => void;
   missionStep: MissionStep;
@@ -46,7 +46,7 @@ const DashboardContext = createContext<DashboardContextValue | null>(null);
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PipelineState | undefined>();
-  const [scenario, setScenario] = useState<string | undefined>();
+  const [scenarios, setScenarios] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | undefined>();
   const [missionStep, setMissionStep] = useState<MissionStep>("idle");
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
@@ -76,8 +76,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     () => ({
       state,
       setState,
-      scenario,
-      setScenario,
+      scenarios,
+      setScenarios,
       lastUpdated,
       setLastUpdated,
       missionStep,
@@ -90,7 +90,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
-      scenario,
+      scenarios,
       lastUpdated,
       missionStep,
       activityLog,

@@ -34,7 +34,7 @@ const MISSION_SEQUENCE: MissionStep[] = [
   "complete",
 ];
 
-function downloadReport(state: unknown, scenario?: string) {
+function downloadReport(state: unknown, scenarioLabel?: string) {
   const blob = new Blob([JSON.stringify(state, null, 2)], {
     type: "application/json",
   });
@@ -42,7 +42,7 @@ function downloadReport(state: unknown, scenario?: string) {
   const anchor = document.createElement("a");
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   anchor.href = url;
-  anchor.download = `ascdp-report-${scenario ?? "default"}-${stamp}.json`;
+  anchor.download = `ascdp-report-${scenarioLabel ?? "default"}-${stamp}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -53,8 +53,8 @@ export default function TopHeader() {
   const meta = metaForPath(location.pathname);
   const {
     state,
-    scenario,
-    setScenario,
+    scenarios,
+    setScenarios,
     setState,
     lastUpdated,
     setLastUpdated,
@@ -63,7 +63,7 @@ export default function TopHeader() {
     setConfigOpen,
   } = useDashboard();
 
-  const { data: scenarios } = useScenarios();
+  const { data: availableScenarios } = useScenarios();
   const runPipeline = useRunPipeline();
   const collect = useCollect();
   const missionTimer = useRef<number | null>(null);
@@ -77,9 +77,8 @@ export default function TopHeader() {
   }, []);
 
   const scenarioOptions = [
-    { label: "No scenario — use live feed signals", value: "" },
     { label: "Typhoon approaching Shanghai Port", value: "Typhoon approaching Shanghai Port" },
-    ...(scenarios ?? [])
+    ...(availableScenarios ?? [])
       .filter((name) => name !== "Typhoon approaching Shanghai Port")
       .map((name) => ({ label: name, value: name })),
   ];
@@ -107,7 +106,7 @@ export default function TopHeader() {
     addActivity("Pipeline run started", "info");
     try {
       const result = await runPipeline.mutateAsync({
-        scenario_name: scenario ?? null,
+        scenario_names: scenarios,
       });
       setState(result);
       setLastUpdated(new Date());
@@ -140,7 +139,13 @@ export default function TopHeader() {
       message.warning("Run analysis first to export a report");
       return;
     }
-    downloadReport(state, scenario);
+    const scenarioLabel =
+      scenarios.length === 0
+        ? "default"
+        : scenarios.length === 1
+          ? scenarios[0]
+          : `${scenarios.length}-scenarios`;
+    downloadReport(state, scenarioLabel);
     addActivity("Report exported", "info");
     message.success("Report downloaded");
   };
@@ -172,10 +177,14 @@ export default function TopHeader() {
       <Space wrap className="scd-top-header-actions">
         <Select
           className="scd-scenario-select"
+          mode="multiple"
+          allowClear
+          maxTagCount="responsive"
+          placeholder="No scenario — use live feed signals"
           options={scenarioOptions}
-          value={scenario ?? ""}
-          onChange={(value) => setScenario(value)}
-          style={{ minWidth: 280 }}
+          value={scenarios}
+          onChange={(value) => setScenarios(value)}
+          style={{ width: 360 }}
         />
         <Badge status="processing" text={<Text type="secondary">{liveLabel}</Text>} />
         <Button icon={<ReloadOutlined />} onClick={handleCollect} loading={collect.isPending} />

@@ -49,6 +49,7 @@ def cors_config() -> tuple[list[str], bool]:
 
 class RunRequest(BaseModel):
     scenario_name: str | None = None
+    scenario_names: list[str] | None = None
 
 
 class AskRequest(BaseModel):
@@ -232,7 +233,7 @@ def create_app() -> FastAPI:
 
     @app.post("/run")
     def run_pipeline(payload: RunRequest) -> dict:
-        state = run(payload.scenario_name)
+        state = run(payload.scenario_name, payload.scenario_names)
         return serialize_state(state)
 
     @app.post("/collect")

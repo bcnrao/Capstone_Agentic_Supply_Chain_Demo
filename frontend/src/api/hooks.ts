@@ -12,7 +12,7 @@ import type {
 } from "../types/state";
 
 export interface RunArgs {
-  scenario_name: string | null;
+  scenario_names: string[];
 }
 
 export function useHealth() {

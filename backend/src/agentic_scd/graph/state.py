@@ -17,5 +17,5 @@ class GraphState(TypedDict, total=False):
     simulation: Simulation
     recommendation: Recommendation
     route: str
-    scenario_name: str
+    scenario_names: list[str]
     run_id: str

@@ -53,7 +53,8 @@ export default function WeatherRisk() {
         size="small"
         columns={columns}
         dataSource={state?.weather_risks ?? []}
-        pagination={{ pageSize: 8 }}
+        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        scroll={{ y: "calc(100vh - 260px)" }}
         locale={{ emptyText: "Run the pipeline to assess hub weather risk" }}
       />
     </Card>

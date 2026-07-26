@@ -114,11 +114,14 @@ def _pick_seed_scenario() -> dict:
 def seed_node(state: "GraphState") -> dict:
     if state.get("new_signals"):
         return {}
-    scenario_name = state.get("scenario_name")
-    if scenario_name:
-        signal = scenario_signal(scenario_name)
-        if signal:
-            return {"new_signals": [signal]}
+    scenario_names = state.get("scenario_names") or []
+    if scenario_names:
+        # The user explicitly selected one or more scenarios. Seed a signal per
+        # resolvable name and return exactly those — never fall through to the
+        # rotating seed fallback, which would inject an unrelated signal the
+        # user did not ask for. Names that do not resolve are simply dropped.
+        signals = [signal for name in scenario_names if (signal := scenario_signal(name))]
+        return {"new_signals": signals}
 
     # No named scenario and no live signals found from feeds.
     # Inject a rotating fallback signal so the pipeline always has something

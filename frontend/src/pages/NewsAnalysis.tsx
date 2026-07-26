@@ -36,7 +36,8 @@ export default function NewsAnalysis() {
         size="small"
         columns={columns}
         dataSource={state?.event_analyses ?? []}
-        pagination={{ pageSize: 8 }}
+        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        scroll={{ y: "calc(100vh - 260px)" }}
         locale={{ emptyText: "Run the pipeline to analyze news and events" }}
       />
     </Card>

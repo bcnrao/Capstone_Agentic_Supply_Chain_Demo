@@ -11,16 +11,22 @@ from agentic_scd.ingestion.store import mark_done, save_run_result, serialize_st
 from agentic_scd.observability import build_run_config, configure_tracing, invoke_traced_pipeline
 
 
-def run(scenario_name: str | None = None) -> GraphState:
+def run(
+    scenario_name: str | None = None,
+    scenario_names: list[str] | None = None,
+) -> GraphState:
     # Signals come from the DB inbox (filled separately via collect() / the
-    # "Refresh external data" button) or a named scenario's seed. The pipeline
-    # itself never fetches live data.
+    # "Refresh external data" button) or one or more named scenarios' seeds.
+    # The pipeline itself never fetches live data. Both the legacy single
+    # `scenario_name` and the multi-select `scenario_names` are normalized to a
+    # single list threaded through the graph.
     configure_tracing()
+    names = [name for name in (scenario_names or ([scenario_name] if scenario_name else [])) if name]
     graph = build_graph()
     run_id = str(uuid.uuid4())
     initial: dict = {"run_id": run_id}
-    if scenario_name:
-        initial["scenario_name"] = scenario_name
+    if names:
+        initial["scenario_names"] = names
     settings = get_settings()
     config = build_run_config(
         run_id=run_id,
@@ -30,12 +36,15 @@ def run(scenario_name: str | None = None) -> GraphState:
     )
     result: GraphState = invoke_traced_pipeline(graph, initial, config)
     result["run_id"] = run_id
-    if scenario_name:
-        result["scenario_name"] = scenario_name
+    # The pipeline_runs.scenario_name column is a single label; join the
+    # selected scenario names for a readable history entry.
+    scenario_label = "; ".join(names) if names else None
+    if scenario_label:
+        result["scenario_name"] = scenario_label
     try:
         init_db()
         with connect() as conn:
-            save_run_result(conn, run_id, result, scenario_name)
+            save_run_result(conn, run_id, result, scenario_label)
             mark_done(conn, [signal.signal_id for signal in result.get("new_signals", [])])
             conn.commit()
     except Exception:

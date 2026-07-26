@@ -36,7 +36,8 @@ export default function Signals() {
         size="small"
         columns={columns}
         dataSource={state?.new_signals ?? []}
-        pagination={{ pageSize: 8 }}
+        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        scroll={{ y: "calc(100vh - 260px)" }}
         locale={{ emptyText: "Run the pipeline to ingest signals" }}
       />
     </Card>

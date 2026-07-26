@@ -26,19 +26,22 @@ export interface NavGroup {
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "SITUATION",
+    label: "OVERVIEW",
+    items: [{ path: "/", label: "Executive", icon: DashboardOutlined }],
+  },
+  {
+    label: "INPUTS",
     items: [
-      { path: "/", label: "Executive", icon: DashboardOutlined },
       { path: "/signals", label: "Signals", icon: ThunderboltOutlined },
-      { path: "/risk", label: "Classification", icon: AlertOutlined },
-      { path: "/impact", label: "Impact Map", icon: GlobalOutlined },
+      { path: "/news", label: "News Analysis", icon: FileTextOutlined },
+      { path: "/weather", label: "Weather Risk", icon: CloudOutlined },
     ],
   },
   {
     label: "ANALYSIS",
     items: [
-      { path: "/news", label: "News Analysis", icon: FileTextOutlined },
-      { path: "/weather", label: "Weather Risk", icon: CloudOutlined },
+      { path: "/risk", label: "Classification", icon: AlertOutlined },
+      { path: "/impact", label: "Impact Map", icon: GlobalOutlined },
       { path: "/forecast", label: "Demand Forecast", icon: BarChartOutlined },
       { path: "/simulation", label: "Simulation", icon: ExperimentOutlined },
     ],
