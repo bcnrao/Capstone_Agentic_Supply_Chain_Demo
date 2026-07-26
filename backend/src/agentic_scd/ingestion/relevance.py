@@ -17,11 +17,9 @@ def load_lexicon(path: str | Path | None = None) -> tuple[str, ...]:
 
 
 def passes_lexicon(signal: DisruptionSignal, lexicon: tuple[str, ...] | None = None) -> bool:
+    # Update to not make weather events filter out
     terms = lexicon if lexicon is not None else load_lexicon()
-    haystack = signal.text.lower()
-    if signal.source_type == "WEATHER" and str(signal.severity_hint or "none").lower() in {"none", "low"}:
-        severe_terms = ("storm", "flood", "typhoon", "gale", "snow", "thunderstorm")
-        return any(term in haystack for term in severe_terms)
+    haystack = f"{signal.title} {signal.raw_text}".lower()
     return any(term in haystack for term in terms)
 
 
