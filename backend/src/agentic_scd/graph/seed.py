@@ -17,6 +17,35 @@ if TYPE_CHECKING:
     from agentic_scd.graph.state import GraphState
 
 
+def severity_hint_for(severity: float | int | None) -> str:
+    """Map a scenario's declared severity (0-10) onto the classifier's graded
+    hint buckets. Previously this was a binary high/moderate split, which meant
+    even a "minor advisory" contributed a +1.5 moderate bonus and nothing ever
+    landed in the low/negligible bands — collapsing the risk heatmap to all-red.
+    The full ladder lets the declared severity actually shape the outcome."""
+    sev = float(severity or 0.0)
+    if sev >= 8.0:
+        return "severe"
+    if sev >= 6.5:
+        return "high"
+    if sev >= 4.5:
+        return "moderate"
+    if sev >= 2.5:
+        return "low"
+    return "none"
+
+
+def scenario_reliability(row: dict) -> float:
+    """Per-scenario source reliability. Lets a scenario be tagged as e.g.
+    unconfirmed chatter (0.2) vs. a confirmed port bulletin (0.9); reliability
+    feeds the classifier's base severity, so this is the main lever for placing
+    a scenario in the low / medium / high band. Defaults to 0.8."""
+    try:
+        return max(0.0, min(1.0, float(row.get("reliability", 0.8))))
+    except (TypeError, ValueError):
+        return 0.8
+
+
 def weather_scenario_signal(row: dict):
     path = FALLBACK_DIR / "open_meteo_hubs.json"
     if not path.exists():
@@ -40,7 +69,7 @@ def weather_scenario_signal(row: dict):
         return None
     hub = snapshot["hub"]
     payload = {
-        "severity_hint": "high" if row.get("severity", 0) >= 7 else "moderate",
+        "severity_hint": severity_hint_for(row.get("severity")),
         **row,
         "hub": hub,
         "response": snapshot["response"],
@@ -49,7 +78,7 @@ def weather_scenario_signal(row: dict):
         signal_id=str(uuid.uuid4()),
         source="scenario_library",
         source_type="WEATHER",
-        source_reliability=0.8,
+        source_reliability=scenario_reliability(row),
         fetched_at=datetime.now(UTC),
         title=row["title"],
         raw_text=row["body"],
@@ -70,12 +99,12 @@ def scenario_signal(name: str):
                 signal = weather_scenario_signal(row)
                 if signal is not None:
                     return signal
-            connector = SyntheticConnector("scenario_library", 0.8, 1)
+            connector = SyntheticConnector("scenario_library", scenario_reliability(row), 1)
             raw = RawItem(
                 title=row["title"],
                 body=row["body"],
                 location={"region": row.get("region")},
-                payload={"severity_hint": "high" if row.get("severity", 0) >= 7 else "moderate", **row},
+                payload={"severity_hint": severity_hint_for(row.get("severity")), **row},
             )
             return normalize(raw, connector)
     return None
@@ -87,9 +116,12 @@ def _pick_seed_scenario() -> dict:
     same hardcoded signal.  Falls back to a safe default if the file is
     missing.
 
-    Only scenarios with severity >= 4.0 are considered — low-severity entries
-    route to monitor_only which skips the impact and forecast agents, breaking
-    the assumption that a no-scenario run always exercises the full pipeline.
+    Only scenarios whose declared severity >= 4.0 are considered. The classifier
+    recomputes severity from keyword/reliability signals, but a low declared
+    severity reliably recomputes low too — and the impact agent drops anything
+    under 3.0, which would leave the fallback run with an empty dashboard. The
+    threshold keeps the no-scenario fallback on scenarios that always produce a
+    populated impact map.
     """
     path = SEED_DIR / "scenarios.json"
     if path.exists():
@@ -131,13 +163,13 @@ def seed_node(state: "GraphState") -> dict:
     # Use a distinct source name so the signals table shows "seed_fallback"
     # rather than "demo_seed" or "SYNTHETIC", making it immediately clear
     # in the demo that live feeds returned nothing and this is a placeholder.
-    connector = SyntheticConnector(name="seed_fallback", reliability=0.7, count=1)
+    connector = SyntheticConnector(name="seed_fallback", reliability=scenario_reliability(row), count=1)
     raw = RawItem(
         title=row["title"],
         body=row["body"],
         location={"region": row.get("region", "Global")},
         payload={
-            "severity_hint": "high" if row.get("severity", 0) >= 7 else "moderate",
+            "severity_hint": severity_hint_for(row.get("severity")),
             "fallback_seed": True,   # flag for UI display
             "fallback_reason": "No live signals found from configured feeds — using seed scenario as fallback.",
             **row,

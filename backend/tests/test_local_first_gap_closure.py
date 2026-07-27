@@ -48,7 +48,7 @@ def test_weather_node_extracts_risk_row() -> None:
     rows = weather_node({"new_signals": [signal]})["weather_risks"]
     assert len(rows) == 1
     assert rows[0].aggregate_severity >= 7.0
-    assert rows[0].region == "China"
+    assert rows[0].region == "Shanghai"  # hub regions are city-level
 
 
 def test_registry_includes_freight_connector() -> None:

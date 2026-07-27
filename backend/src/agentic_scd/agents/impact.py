@@ -45,10 +45,18 @@ CATEGORY_HINTS = {
 # noise ~0.79-0.95, so 0.72 catches the former while clearly rejecting the latter.
 GATE_DISTANCE = 0.72
 
-# Region phrasings in the news that map onto a network region.
+# Country/continent phrasings in the news that map onto a network region. Network
+# regions are now city-level (Shanghai, Mumbai, ...), so each alias points at that
+# country's representative hub city; without this, country-worded news matches no
+# supplier by region (product/place hits still apply).
 REGION_ALIASES = {
-    "north america": "usa", "united states": "usa", "american": "usa",
-    "chinese": "china", "indian": "india", "dutch": "netherlands", "vietnamese": "vietnam",
+    "north america": "los angeles", "united states": "los angeles",
+    "usa": "los angeles", "american": "los angeles",
+    "china": "shanghai", "chinese": "shanghai",
+    "india": "mumbai", "indian": "mumbai",
+    "netherlands": "rotterdam", "dutch": "rotterdam",
+    "vietnam": "ho chi minh", "vietnamese": "ho chi minh",
+    "europe": "rotterdam", "european": "rotterdam",
 }
 
 # Facility-name words to strip when deriving a facility's city token.

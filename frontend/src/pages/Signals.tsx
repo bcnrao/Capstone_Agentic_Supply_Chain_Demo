@@ -17,14 +17,16 @@ export default function Signals() {
     {
       title: "Event date",
       key: "event_date",
+      width: 180,
       render: (_, row) => formatDate(row.event_time ?? row.fetched_at),
     },
     { title: "Title", dataIndex: "title", key: "title", ellipsis: true },
-    { title: "Source", dataIndex: "source", key: "source" },
-    { title: "Type", dataIndex: "source_type", key: "source_type" },
+    { title: "Source", dataIndex: "source", key: "source", width: 130 },
+    { title: "Type", dataIndex: "source_type", key: "source_type", width: 110 },
     {
       title: "Region",
       key: "region",
+      width: 130,
       render: (_, row) => row.location?.region ?? "",
     },
   ];

@@ -2,7 +2,7 @@
   "suppliers": [
     {
       "name": "Supplier A",
-      "region": "China",
+      "region": "Shanghai",
       "products": [
         "cosmetics",
         "skincare"
@@ -28,7 +28,7 @@
     },
     {
       "name": "Supplier B",
-      "region": "India",
+      "region": "Mumbai",
       "products": [
         "haircare",
         "wellness"
@@ -53,7 +53,7 @@
     },
     {
       "name": "Supplier C",
-      "region": "Vietnam",
+      "region": "Ho Chi Minh",
       "products": [
         "cosmetics",
         "fragrance"
@@ -77,7 +77,7 @@
     },
     {
       "name": "Supplier D",
-      "region": "Netherlands",
+      "region": "Rotterdam",
       "products": [
         "skincare",
         "wellness"
@@ -100,7 +100,7 @@
     },
     {
       "name": "Supplier E",
-      "region": "USA",
+      "region": "Los Angeles",
       "products": [
         "fragrance",
         "haircare"
@@ -119,12 +119,86 @@
         "Los Angeles",
         "Long Beach"
       ]
+    },
+    {
+      "name": "Supplier F",
+      "region": "Chennai",
+      "products": [
+        "skincare",
+        "cosmetics"
+      ],
+      "reliability": 0.83,
+      "alt_supplier": "Supplier B",
+      "primary_lane": "Chennai-Singapore",
+      "description": "Chennai-based contract manufacturer of skincare and colour cosmetics for the South India cluster; exports through Chennai and Kattupalli ports on the Chennai-Singapore transshipment lane.",
+      "materials": [
+        "aloe vera extract",
+        "niacinamide",
+        "vitamin C",
+        "mica",
+        "glass jars",
+        "pump dispensers"
+      ],
+      "aka_ports": [
+        "Chennai",
+        "Ennore",
+        "Kattupalli"
+      ]
+    },
+    {
+      "name": "Supplier G",
+      "region": "Delhi",
+      "products": [
+        "haircare",
+        "fragrance"
+      ],
+      "reliability": 0.77,
+      "alt_supplier": "Supplier B",
+      "primary_lane": "Delhi-Mumbai",
+      "description": "Delhi NCR manufacturer of haircare and fragrance lines serving North India; feeds finished goods to the Mumbai export gateway over the Delhi-Mumbai road corridor.",
+      "materials": [
+        "amla oil",
+        "keratin",
+        "fragrance concentrates",
+        "ethanol",
+        "HDPE bottles",
+        "spray caps"
+      ],
+      "aka_ports": [
+        "Delhi",
+        "Gurugram",
+        "Tughlakabad ICD"
+      ]
+    },
+    {
+      "name": "Supplier H",
+      "region": "Kolkata",
+      "products": [
+        "wellness",
+        "haircare"
+      ],
+      "reliability": 0.8,
+      "alt_supplier": "Supplier B",
+      "primary_lane": "Kolkata-Singapore",
+      "description": "Kolkata-based blender of wellness and haircare formulations for East India; ships via Kolkata and Haldia ports on the Bay of Bengal lane to Singapore.",
+      "materials": [
+        "neem extract",
+        "ashwagandha",
+        "coconut oil",
+        "herbal actives",
+        "cartons",
+        "HDPE bottles"
+      ],
+      "aka_ports": [
+        "Kolkata",
+        "Haldia"
+      ]
     }
   ],
   "facilities": [
     {
       "name": "Shanghai Port Consolidation Hub",
-      "region": "China",
+      "region": "Shanghai",
       "type": "port",
       "lanes": [
         "Shanghai-Los Angeles",
@@ -143,7 +217,7 @@
     },
     {
       "name": "Rotterdam DC",
-      "region": "Netherlands",
+      "region": "Rotterdam",
       "type": "warehouse",
       "lanes": [
         "Mumbai-Rotterdam",
@@ -161,7 +235,7 @@
     },
     {
       "name": "Los Angeles Import DC",
-      "region": "USA",
+      "region": "Los Angeles",
       "type": "warehouse",
       "lanes": [
         "Shanghai-Los Angeles",
@@ -180,7 +254,7 @@
     },
     {
       "name": "Bangalore Blending Plant",
-      "region": "India",
+      "region": "Bangalore",
       "type": "plant",
       "lanes": [
         "Mumbai-Rotterdam",
@@ -194,6 +268,60 @@
         "blending",
         "filling",
         "India"
+      ]
+    },
+    {
+      "name": "Chennai Port Terminal",
+      "region": "Chennai",
+      "type": "port",
+      "lanes": [
+        "Chennai-Singapore",
+        "Chennai-Colombo",
+        "Mumbai-Chennai"
+      ],
+      "description": "Container export terminal at the Port of Chennai handling South India skincare and cosmetics volumes for the Singapore and Colombo transshipment lanes.",
+      "keywords": [
+        "Chennai",
+        "Ennore",
+        "Kattupalli",
+        "port",
+        "terminal",
+        "South India",
+        "export"
+      ]
+    },
+    {
+      "name": "Delhi Distribution Center",
+      "region": "Delhi",
+      "type": "warehouse",
+      "lanes": [
+        "Delhi-Mumbai"
+      ],
+      "description": "North India distribution centre in the Delhi NCR belt consolidating haircare and fragrance finished goods for the road corridor to the Mumbai export gateway.",
+      "keywords": [
+        "Delhi",
+        "NCR",
+        "Gurugram",
+        "warehouse",
+        "distribution",
+        "North India"
+      ]
+    },
+    {
+      "name": "Kolkata Distribution Center",
+      "region": "Kolkata",
+      "type": "warehouse",
+      "lanes": [
+        "Kolkata-Singapore",
+        "Mumbai-Kolkata"
+      ],
+      "description": "East India distribution centre near Kolkata serving wellness and haircare replenishment and the Bay of Bengal export lane to Singapore.",
+      "keywords": [
+        "Kolkata",
+        "Haldia",
+        "warehouse",
+        "distribution",
+        "East India"
       ]
     }
   ],
@@ -239,6 +367,48 @@
       "days": 2,
       "cost_index": 1.8,
       "description": "India-Middle East air lane from Mumbai to Dubai for expedited high-value shipments."
+    },
+    {
+      "name": "Chennai-Singapore",
+      "mode": "Sea",
+      "days": 7,
+      "cost_index": 0.9,
+      "description": "South India-Southeast Asia sea lane from Chennai to Singapore for transshipment of skincare and cosmetics exports."
+    },
+    {
+      "name": "Chennai-Colombo",
+      "mode": "Sea",
+      "days": 3,
+      "cost_index": 0.72,
+      "description": "Short-haul feeder lane from Chennai to Colombo consolidating South India cargo onto mainline services."
+    },
+    {
+      "name": "Mumbai-Chennai",
+      "mode": "Rail",
+      "days": 3,
+      "cost_index": 0.5,
+      "description": "Domestic rail lane linking the Mumbai gateway with the Chennai manufacturing cluster."
+    },
+    {
+      "name": "Delhi-Mumbai",
+      "mode": "Road",
+      "days": 2,
+      "cost_index": 0.55,
+      "description": "Domestic road corridor moving North India haircare and fragrance goods from Delhi NCR to the Mumbai export gateway."
+    },
+    {
+      "name": "Kolkata-Singapore",
+      "mode": "Sea",
+      "days": 6,
+      "cost_index": 0.85,
+      "description": "Bay of Bengal sea lane from Kolkata to Singapore carrying East India wellness and haircare exports."
+    },
+    {
+      "name": "Mumbai-Kolkata",
+      "mode": "Rail",
+      "days": 3,
+      "cost_index": 0.52,
+      "description": "Domestic rail lane connecting the Mumbai gateway with the Kolkata East India cluster."
     }
   ]
 }

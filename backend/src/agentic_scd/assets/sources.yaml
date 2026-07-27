@@ -9,14 +9,25 @@ sources:
     reliability: 0.7
     config:
       # Supply-chain feeds + query-scoped Google News (Stage 0 source targeting).
+      # NOTE: `queries` below are resolved against the US edition of Google News
+      # (gl=US in rss.py), so India/Asia stories rarely surface. To get regional
+      # coverage we add India-edition Google News search feeds directly under
+      # `feeds` (hl=en-IN&gl=IN&ceid=IN:en) — these return India/Asia supply-chain
+      # news the US-scoped queries miss.
       feeds:
         - https://www.supplychaindive.com/feeds/news/
+        # India-edition Google News — India supply-chain / port / logistics news.
+        - "https://news.google.com/rss/search?q=India+supply+chain+OR+port+OR+logistics+disruption+OR+delay+OR+congestion+OR+strike+OR+shortage+when%3A30d&hl=en-IN&gl=IN&ceid=IN:en"
+        # India-edition Google News — wider Asia supply-chain / shipping news.
+        - "https://news.google.com/rss/search?q=Asia+supply+chain+OR+port+OR+shipping+disruption+OR+congestion+OR+factory+shutdown+when%3A30d&hl=en-IN&gl=IN&ceid=IN:en"
       queries:
         - port strike
         - factory shutdown
         - shipping delay
         - port congestion
         - tariff
+        - India port congestion
+        - Nhava Sheva OR Chennai port disruption
     fallback_path: data/fallback/rss_supplychain.xml
 
   - name: open_meteo
@@ -26,20 +37,56 @@ sources:
     config:
       # Days of daily forecast to pull and analyze per hub (weather agent horizon).
       forecast_days: 7
-      # Major hubs/ports to watch for severe weather disruption.
+      # Sea/coastal ports across the network KB to watch for severe weather
+      # disruption. Keep in sync with data/fallback/open_meteo_hubs.json (the
+      # offline snapshot the weather agent reads when live fetch is unavailable).
+      # region is city-level (matches the network KB + demand CSV) so weather
+      # signals surface consistently on the heatmap alongside supplier regions.
       hubs:
         - hub_port: Port of Shanghai
-          region: China
+          region: Shanghai
           lat: 31.23
           lon: 121.47
         - hub_port: Port of Rotterdam
-          region: Netherlands
+          region: Rotterdam
           lat: 51.95
           lon: 4.14
         - hub_port: Port of Los Angeles
-          region: USA
+          region: Los Angeles
           lat: 33.74
           lon: -118.27
+        - hub_port: Port of New York
+          region: New York
+          lat: 40.67
+          lon: -74.04
+        - hub_port: Nhava Sheva Port
+          region: Mumbai
+          lat: 18.95
+          lon: 72.95
+        - hub_port: Port of Chennai
+          region: Chennai
+          lat: 13.08
+          lon: 80.29
+        - hub_port: Haldia Port
+          region: Kolkata
+          lat: 22.03
+          lon: 88.09
+        - hub_port: Cat Lai Terminal
+          region: Ho Chi Minh
+          lat: 10.76
+          lon: 106.79
+        - hub_port: Port of Singapore
+          region: Singapore
+          lat: 1.26
+          lon: 103.83
+        - hub_port: Port of Colombo
+          region: Colombo
+          lat: 6.94
+          lon: 79.84
+        - hub_port: Jebel Ali Port
+          region: Dubai
+          lat: 25.01
+          lon: 55.06
     fallback_path: data/fallback/open_meteo_hubs.json
 
   - name: synthetic

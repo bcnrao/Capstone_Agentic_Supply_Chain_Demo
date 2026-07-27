@@ -59,8 +59,9 @@ def test_rss_fallback_replays_snapshot() -> None:
         fallback_path=FALLBACK_DIR / "rss_supplychain.xml",
     )
     items = conn.fallback()
-    assert len(items) == 4  # 3 disruption + 1 off-topic control
+    assert len(items) == 6  # 5 disruption (incl. 2 India/Asia) + 1 off-topic control
     assert any("Port strike" in i.title for i in items)
+    assert any("Nhava Sheva" in i.title for i in items)
 
 
 def test_open_meteo_fallback_replays_snapshot() -> None:
@@ -71,6 +72,6 @@ def test_open_meteo_fallback_replays_snapshot() -> None:
         fallback_path=FALLBACK_DIR / "open_meteo_hubs.json",
     )
     items = conn.fallback()
-    assert len(items) == 3
+    assert len(items) == 11  # sea/coastal ports across the network KB
     assert items[0].location is not None
     assert items[0].location["hub_port"] == "Port of Shanghai"

@@ -7,26 +7,30 @@ import type { EventAnalysis } from "../types/state";
 export default function NewsAnalysis() {
   const { state } = useDashboard();
   const columns: ColumnsType<EventAnalysis> = [
-    { title: "Event type", dataIndex: "event_type", key: "event_type" },
+    { title: "Event type", dataIndex: "event_type", key: "event_type", width: 140 },
     {
       title: "Region",
       dataIndex: "extracted_region",
       key: "extracted_region",
+      width: 120,
       render: (value?: string | null) => value ?? "",
     },
     {
       title: "Severity hint",
       dataIndex: "severity_hint",
       key: "severity_hint",
+      width: 120,
       render: (value?: string | null) => value ?? "",
     },
     {
       title: "Entities",
       dataIndex: "entities",
       key: "entities",
+      width: 220,
+      ellipsis: true,
       render: (entities: string[]) => entities.join(", "),
     },
-    { title: "Summary", dataIndex: "summary", key: "summary" },
+    { title: "Summary", dataIndex: "summary", key: "summary", ellipsis: true },
   ];
 
   return (

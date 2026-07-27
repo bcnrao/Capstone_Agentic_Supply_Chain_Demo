@@ -2,6 +2,16 @@
 export type LonLat = [number, number];
 
 export const REGION_CENTROIDS: Record<string, LonLat> = {
+  // City-level regions (match the network KB suppliers + demand CSV).
+  Shanghai: [121.47, 31.23],
+  Mumbai: [72.87, 19.07],
+  Chennai: [80.27, 13.08],
+  Delhi: [77.21, 28.61],
+  Kolkata: [88.36, 22.57],
+  "Ho Chi Minh": [106.63, 10.82],
+  Rotterdam: [4.48, 51.92],
+  "Los Angeles": [-118.24, 34.05],
+  // Country/continent labels kept as fallbacks for any legacy or live signals.
   China: [121.47, 31.23],
   India: [72.87, 19.07],
   Vietnam: [106.63, 10.82],
@@ -21,6 +31,11 @@ export const HUB_CENTROIDS: Record<string, LonLat> = {
   "Ho Chi Minh": [106.63, 10.82],
   "New York": [-74.0, 40.7],
   Bangalore: [77.59, 12.97],
+  Chennai: [80.27, 13.08],
+  Delhi: [77.21, 28.61],
+  Kolkata: [88.36, 22.57],
+  Colombo: [79.86, 6.93],
+  Singapore: [103.82, 1.35],
 };
 
 export function resolveCoordinates(
