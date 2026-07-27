@@ -42,7 +42,7 @@ function downloadReport(state: unknown, scenarioLabel?: string) {
   const anchor = document.createElement("a");
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   anchor.href = url;
-  anchor.download = `ascdp-report-${scenarioLabel ?? "default"}-${stamp}.json`;
+  anchor.download = `supply-chain-copilot-report-${scenarioLabel ?? "default"}-${stamp}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

@@ -18,6 +18,7 @@ def fallback_recommendation(state: dict) -> Recommendation:
         urgency="medium",
         expected_impact="Keeps an operator in the loop while preserving a safe default response.",
         owner="Supply chain analyst",
+        rationale="Safe default — the pipeline did not produce a structured recommendation, so no simulation-backed rationale is available for this run.",
     )
     return Recommendation(
         actions=[f"[{action.urgency.upper()}] {action.action} Owner: {action.owner}."],
@@ -34,7 +35,8 @@ def normalize_action(action: MitigationAction) -> MitigationAction:
     text = clean_text(action.action) or "Review the disruption signal with the control tower."
     expected = clean_text(action.expected_impact) or "Preserves a valid mitigation plan for the operator."
     owner = clean_text(action.owner) or "Supply chain analyst"
-    return MitigationAction(action=text, urgency=urgency, expected_impact=expected, owner=owner)
+    rationale = clean_text(action.rationale)
+    return MitigationAction(action=text, urgency=urgency, expected_impact=expected, owner=owner, rationale=rationale)
 
 
 def output_guardrail_node(state: dict) -> dict:

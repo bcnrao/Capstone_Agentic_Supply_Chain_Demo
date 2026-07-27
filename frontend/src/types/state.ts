@@ -136,6 +136,9 @@ export interface MitigationAction {
   urgency: string;
   expected_impact: string;
   owner: string;
+  // Why this action was chosen (playbook + forecast/simulation drivers).
+  // Empty on legacy runs — the UI derives a fallback from forecast/simulation.
+  rationale?: string;
 }
 
 export interface Recommendation {

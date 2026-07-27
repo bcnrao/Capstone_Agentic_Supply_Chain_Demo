@@ -209,6 +209,81 @@ body {
   border-radius: 50%;
 }
 
+.scd-heatmap-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.scd-heatmap {
+  border-collapse: separate;
+  border-spacing: 2px;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.scd-heatmap-corner {
+  width: 150px;
+}
+
+.scd-heatmap-colhead {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475467;
+  text-align: center;
+  padding: 4px 4px 8px;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.scd-heatmap-rowhead {
+  font-size: 13px;
+  font-weight: 600;
+  color: #101828;
+  text-align: left;
+  padding-right: 12px;
+  white-space: nowrap;
+  width: 150px;
+}
+
+.scd-heatmap-cell {
+  padding: 0;
+}
+
+.scd-heatmap-fill {
+  height: 38px;
+  min-width: 44px;
+  border-radius: 3px;
+  cursor: default;
+  transition: filter 0.12s ease;
+}
+
+.scd-heatmap-fill:hover {
+  filter: brightness(0.92);
+}
+
+.scd-heatmap-empty {
+  height: 38px;
+  min-width: 44px;
+  border-radius: 3px;
+  background: #f2f4f7;
+}
+
+.scd-heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.scd-heatmap-legend-bar {
+  height: 10px;
+  flex: 1;
+  max-width: 240px;
+  border-radius: 5px;
+}
+
 pre.scd-json {
   background: #0f172a;
   color: #e2e8f0;

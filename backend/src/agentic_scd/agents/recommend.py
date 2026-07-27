@@ -57,7 +57,13 @@ def llm_recommendation(classifications: list[Classification], impacts: list[Impa
         "simulation": simulation.model_dump(mode="json"),
         "playbook_evidence": evidence,
     }
-    system = "Return JSON only with a top-level key actions. Each action must include action, urgency, expected_impact, owner, evidence."
+    system = (
+        "Return JSON only with a top-level key actions. Each action must include "
+        "action, urgency, expected_impact, owner, evidence, and rationale. The "
+        "rationale must explain in one sentence why this action was chosen, citing "
+        "the simulation stockout probability / revenue impact and the forecast "
+        "demand and inventory figures that justify its urgency."
+    )
     try:
         raw = completion(json.dumps(payload, ensure_ascii=False), system=system, settings=settings, temperature=0)
         data = parse_json_payload(raw)
@@ -78,7 +84,8 @@ def llm_recommendation(classifications: list[Classification], impacts: list[Impa
         expected = " ".join(str(row.get("expected_impact", "Reduces disruption exposure.")).split()) or "Reduces disruption exposure."
         owner = " ".join(str(row.get("owner", "Supply chain analyst")).split()) or "Supply chain analyst"
         citation = " ".join(str(row.get("evidence", "")).split())
-        structured.append(MitigationAction(action=action, urgency=level, expected_impact=expected, owner=owner))
+        rationale = " ".join(str(row.get("rationale") or citation).split())
+        structured.append(MitigationAction(action=action, urgency=level, expected_impact=expected, owner=owner, rationale=rationale))
         if citation:
             llm_evidence.append(citation)
     if not structured:
@@ -97,6 +104,11 @@ def build_recommendation(classifications: list[Classification], impacts: list[Im
             urgency="low",
             expected_impact="No action required while the event stays outside our supplier, lane and facility footprint.",
             owner="Control tower analyst",
+            rationale=(
+                "Impact analysis matched 0 affected suppliers, lanes or facilities, so the "
+                "demand forecast stays flat and the Monte-Carlo simulation projects a 0% "
+                "stockout probability with no revenue at risk — nothing to mitigate."
+            ),
         )
         return Recommendation(
             actions=[f"[{action.urgency.upper()}] {action.action} Owner: {action.owner}."],
@@ -116,14 +128,16 @@ def build_recommendation(classifications: list[Classification], impacts: list[Im
         docs = mitigation_retriever().search(search_category, top_k=2, category=search_category)
         if not docs:
             docs = mitigation_retriever().search(category, top_k=2)
+        playbook_title: str | None = None
         if docs:
             chosen = docs[0]
             meta = chosen.metadata
+            playbook_title = str(meta.get("title", chosen.doc_id))
             action = str(meta.get("action", "Review supplier exposure and raise safety stock."))
             if category == "logistics" and "freight" not in action.lower():
                 action = f"{action} Use controlled emergency freight only for top SKUs."
             expected = str(meta.get("expected_effect", "Reduces disruption exposure."))
-            evidence.append(f"{meta.get('title', chosen.doc_id)}: {expected}")
+            evidence.append(f"{playbook_title}: {expected}")
         else:
             action = "Review supplier exposure, reserve safety stock, and prepare an alternate route."
             expected = "Creates a controlled response while more data arrives."
@@ -131,7 +145,15 @@ def build_recommendation(classifications: list[Classification], impacts: list[Im
             action = f"Use the freight mitigation playbook: {action}"
         level = urgency(classification, simulation) if classification else "medium"
         owner = OWNER_BY_CATEGORY.get(category, "Supply chain analyst")
-        structured.append(MitigationAction(action=action, urgency=level, expected_impact=expected, owner=owner))
+        severity_txt = f"classified severity {classification.severity:.1f}" if classification else "the risk classification"
+        source_txt = f"Matched the '{playbook_title}' for the {category} risk. " if playbook_title else f"Applied the standard {category} response. "
+        rationale = (
+            f"{source_txt}Ranked {level} from {severity_txt} and the Monte-Carlo "
+            f"simulation's {simulation.stockout_probability:.0%} stockout probability "
+            f"(~${simulation.revenue_impact:,.0f} revenue at risk over a "
+            f"{simulation.recovery_time_days:.0f}-day recovery)."
+        )
+        structured.append(MitigationAction(action=action, urgency=level, expected_impact=expected, owner=owner, rationale=rationale))
     generation_mode = "deterministic_playbook"
     llm_result = llm_recommendation(classifications, impacts, simulation, evidence)
     if llm_result is not None:
@@ -142,7 +164,7 @@ def build_recommendation(classifications: list[Classification], impacts: list[Im
         evidence = llm_evidence
         generation_mode = "llm_playbook"
     if simulation.stockout_probability >= 0.5:
-        structured.insert(0, MitigationAction(action="Open a daily disruption war-room until stockout probability drops below 35 percent.", urgency="critical", expected_impact="Keeps cross-functional decisions synchronized during the highest-risk window.", owner="Supply chain director"))
+        structured.insert(0, MitigationAction(action="Open a daily disruption war-room until stockout probability drops below 35 percent.", urgency="critical", expected_impact="Keeps cross-functional decisions synchronized during the highest-risk window.", owner="Supply chain director", rationale=f"The Monte-Carlo simulation's {simulation.stockout_probability:.0%} stockout probability crossed the 50% war-room threshold, warranting a standing daily war-room until it falls back below 35%."))
     actions = [f"[{item.urgency.upper()}] {item.action} Owner: {item.owner}." for item in structured]
     impacted = sum(len(item.affected_entities) for item in impacts)
     summary = f"{len(actions)} ranked actions for {len(categories)} risk category(ies), {impacted} affected network node(s), stockout probability {simulation.stockout_probability:.0%}, expected revenue impact {simulation.revenue_impact:,.0f}."

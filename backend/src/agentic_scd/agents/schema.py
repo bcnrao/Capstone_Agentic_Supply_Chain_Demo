@@ -151,6 +151,9 @@ class MitigationAction(BaseModel):
     urgency: str
     expected_impact: str
     owner: str
+    # Why this action was chosen — playbook match plus the forecast/simulation
+    # drivers that set its urgency. Empty on legacy runs (frontend derives one).
+    rationale: str = ""
 
 
 class Recommendation(BaseModel):

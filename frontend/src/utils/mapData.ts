@@ -48,7 +48,7 @@ function levelColor(level: RiskLevel): string {
   }
 }
 
-export { levelColor };
+export { levelColor, severityLevel };
 
 function upsertNode(
   nodes: Map<string, MapNode>,

@@ -37,10 +37,10 @@ export default function SidebarNav() {
         <div className="scd-brand-icon">⬡</div>
         <div>
           <Text strong className="scd-brand-title">
-            ASCDP
+            Supply Chain Copilot
           </Text>
           <Text type="secondary" className="scd-brand-sub">
-            Agentic Supply Chain
+            Beauty &amp; Personal Care
           </Text>
         </div>
       </div>
