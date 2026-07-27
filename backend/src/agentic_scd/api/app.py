@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from agentic_scd.__main__ import run
+from agentic_scd.agents.schema import Classification, Forecast, ImpactMap, SimOverrides
+from agentic_scd.agents.simulate import run_simulation
 from agentic_scd.config import get_settings
 from agentic_scd.config.localfirst import CONFIG_FIELDS, apply_runtime_env, local_env_path
 from agentic_scd.db import connect, init_db, ping
@@ -50,6 +52,18 @@ def cors_config() -> tuple[list[str], bool]:
 class RunRequest(BaseModel):
     scenario_name: str | None = None
     scenario_names: list[str] | None = None
+
+
+class WhatIfRequest(BaseModel):
+    """Re-run only the simulation for an already-computed pipeline state, with
+    user-supplied knob overrides. The frontend sends back the current run's
+    classifications/impacts/forecast so no pipeline stage (collect → classify →
+    impact → forecast) is re-executed and nothing is persisted."""
+
+    classifications: list[Classification] = []
+    impacts: list[ImpactMap] = []
+    forecast: Forecast | None = None
+    overrides: SimOverrides = SimOverrides()
 
 
 class AskRequest(BaseModel):
@@ -235,6 +249,16 @@ def create_app() -> FastAPI:
     def run_pipeline(payload: RunRequest) -> dict:
         state = run(payload.scenario_name, payload.scenario_names)
         return serialize_state(state)
+
+    @app.post("/simulate/what-if")
+    def simulate_what_if(payload: WhatIfRequest) -> dict:
+        sim = run_simulation(
+            payload.classifications,
+            payload.impacts,
+            payload.forecast,
+            overrides=payload.overrides,
+        )
+        return sim.model_dump(mode="json")
 
     @app.post("/collect")
     def collect_sources() -> dict:

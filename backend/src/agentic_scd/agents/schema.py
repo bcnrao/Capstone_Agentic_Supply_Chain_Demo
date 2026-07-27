@@ -73,6 +73,53 @@ class Forecast(BaseModel):
     retrieved_context: list[str] = Field(default_factory=list)
 
 
+class HistogramBin(BaseModel):
+    bin_start: float
+    bin_end: float
+    count: int
+
+
+class SimOverrides(BaseModel):
+    """User-supplied what-if overrides for the simulation knobs.
+
+    Every field is optional; a value of ``None`` means "use the value the
+    scenario derives on its own". Ranges are enforced server-side because these
+    flow straight into SimPy timeouts and numpy draws (an uncapped iteration
+    count would hang the request thread).
+    """
+
+    risk: float | None = Field(default=None, ge=0, le=1)
+    # Supplier lead-time mean (days) — the Supplier-node knob.
+    lead_time_mean: float | None = Field(default=None, gt=0, le=120)
+    # Port-congestion multiplier on the port-clearance delay — the Port-node knob
+    # (1.0 = derived). Preferred over supplier_reliability, which the SimPy model
+    # ignores (it only feeds the numpy fallback), so a slider for it would be dead.
+    port_delay_factor: float | None = Field(default=None, gt=0, le=10)
+    defect_rate: float | None = Field(default=None, ge=0, le=1)
+    daily_demand: float | None = Field(default=None, gt=0, le=100_000)
+    # Multiplier on the derived opening inventory (1.0 = unchanged). Preferred
+    # over a safety-buffer-days knob because the buffer sits under a max() floor
+    # dominated by the ~38-day first-shipment ETA, so it barely moves outcomes.
+    inventory_multiplier: float | None = Field(default=None, gt=0, le=10)
+    iterations: int | None = Field(default=None, ge=1, le=2000)
+    # When true, draw a fresh random seed instead of the scenario's deterministic
+    # one — surfaces sampling noise rather than isolating a knob's effect.
+    reshuffle_seed: bool = False
+
+
+class SimParams(BaseModel):
+    """The resolved knob values a simulation actually ran with — echoed back so
+    the what-if UI can anchor its sliders at the scenario's real values."""
+
+    risk: float = 0.0
+    supplier_reliability: float = 0.0
+    lead_time_mean: float = 0.0
+    defect_rate: float = 0.0
+    daily_demand: float = 0.0
+    opening_inventory: float = 0.0
+    iterations: int = 0
+
+
 class Simulation(BaseModel):
     stockout_probability: float = Field(default=0.0, ge=0, le=1)
     revenue_impact: float = 0.0
@@ -85,6 +132,18 @@ class Simulation(BaseModel):
     revenue_loss_p90: float = 0.0
     engine: str = ""
     retrieved_context: list[str] = Field(default_factory=list)
+    # Deterministic "flaw of averages" baseline — the same model run once with
+    # every stochastic input fixed at its mean. Contrasted against the Monte
+    # Carlo distribution above to show what single-point estimates hide.
+    deterministic_stockout: bool = False
+    deterministic_revenue_loss: float = 0.0
+    deterministic_shortage_units: float = 0.0
+    deterministic_service_level: float = 1.0
+    deterministic_recovery_days: float = 0.0
+    # Per-iteration revenue-loss distribution (empty when no run lost revenue).
+    revenue_histogram: list[HistogramBin] = Field(default_factory=list)
+    # Resolved knob values this run used — lets the what-if UI anchor its sliders.
+    params: SimParams | None = None
 
 
 class MitigationAction(BaseModel):

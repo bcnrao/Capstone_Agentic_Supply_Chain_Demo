@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from agentic_scd.agents.forecast import aggregate_risk
-from agentic_scd.agents.schema import Classification, Forecast, ImpactMap
+from agentic_scd.agents.schema import Classification, Forecast, ImpactMap, SimOverrides
 from agentic_scd.ingestion.paths import SEED_DIR
 
 if TYPE_CHECKING:
@@ -79,6 +79,38 @@ REVENUE_PER_UNIT  = 18.0  # ₹ per unit short (from existing engine)
 # At high risk, defects + delays erode many of these → realistic shortfall.
 # At low risk, most arrive on time with low defect losses → low/zero shortage.
 DAYS_SUPPLY_PER_SHIPMENT = 11
+
+
+# ---------------------------------------------------------------------------
+# Mean-input RNG shim — for the deterministic "flaw of averages" comparison
+# ---------------------------------------------------------------------------
+
+
+class _MeanRng:
+    """Drop-in replacement for ``np.random.Generator`` that returns each
+    distribution's *expected value* instead of a random draw.
+
+    Feeding this into the exact same model code produces a single
+    deterministic run with mean inputs — the classic "flaw of averages"
+    baseline against which the Monte Carlo distribution is contrasted.
+
+    Only the three methods the iteration functions actually call are
+    implemented; each honours ``size=`` so the numpy-fallback path (which
+    draws arrays) keeps working.
+    """
+
+    @staticmethod
+    def _out(value: float, size: int | None):
+        return float(value) if size is None else np.full(size, float(value))
+
+    def normal(self, loc: float = 0.0, scale: float = 1.0, size: int | None = None):
+        return self._out(loc, size)  # E[Normal(loc, scale)] = loc
+
+    def exponential(self, scale: float = 1.0, size: int | None = None):
+        return self._out(scale, size)  # E[Exponential(scale)] = scale
+
+    def poisson(self, lam: float = 1.0, size: int | None = None):
+        return self._out(lam, size)  # E[Poisson(lam)] = lam
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +177,8 @@ def _run_one_iteration(
     inventory: float,
     daily_demand: float,
     n_affected_nodes: int,
+    lead_time_mean: float = KAGGLE_LEAD_TIME_MEAN,
+    port_delay_factor: float = 1.0,
 ) -> tuple[bool, float, float, float, float]:
     """Simulate one 30-day window and return
     (stockout_occurred, shortage_units, revenue_lost, recovery_days, service_level).
@@ -157,11 +191,13 @@ def _run_one_iteration(
         return _simpy_iteration(
             rng, risk, transit_days, supplier_reliability,
             defect_rate, inventory, daily_demand, n_affected_nodes,
+            lead_time_mean, port_delay_factor,
         )
     except ImportError:
         return _numpy_fallback_iteration(
             rng, risk, transit_days, supplier_reliability,
             defect_rate, inventory, daily_demand, n_affected_nodes,
+            lead_time_mean, port_delay_factor,
         )
 
 
@@ -174,6 +210,8 @@ def _simpy_iteration(
     inventory: float,
     daily_demand: float,
     n_affected_nodes: int,
+    lead_time_mean: float = KAGGLE_LEAD_TIME_MEAN,
+    port_delay_factor: float = 1.0,
 ) -> tuple[bool, float, float, float, float]:
     """SimPy implementation of the 4-node supply chain model.
 
@@ -241,7 +279,7 @@ def _simpy_iteration(
         # of how many other orders are in flight.
         lead_time = max(
             0.5,
-            float(rng.normal(KAGGLE_LEAD_TIME_MEAN, KAGGLE_LEAD_TIME_STD)),
+            float(rng.normal(lead_time_mean, KAGGLE_LEAD_TIME_STD)),
         )
         with supplier.request() as req:
             yield req
@@ -252,9 +290,10 @@ def _simpy_iteration(
         # with lead_time=16d and transit=17d that pushed total arrival to 38d+,
         # guaranteeing every shipment missed the 30-day window.
         # New mean: (0.5 + risk*1.5) = 0.5d at risk=0, 2.0d at risk=1.0.
+        # port_delay_factor is the Port-node what-if knob (1.0 = unchanged).
         port_delay = max(
             0.25,
-            float(rng.exponential(0.5 + risk * 1.5 + 0.1 * n_affected_nodes)),
+            float(rng.exponential((0.5 + risk * 1.5 + 0.1 * n_affected_nodes) * port_delay_factor)),
         )
         with port.request() as req:
             yield req
@@ -353,12 +392,19 @@ def _numpy_fallback_iteration(
     inventory: float,
     daily_demand: float,
     n_affected_nodes: int,
+    lead_time_mean: float = KAGGLE_LEAD_TIME_MEAN,
+    port_delay_factor: float = 1.0,
 ) -> tuple[bool, float, float, float, float]:
     """Pure-numpy fallback when SimPy is not installed.
 
     Approximates the SimPy model with a vectorised daily simulation:
     each day draws a random supply arrival and demand draw, accumulating
     shortages when demand exceeds supply + inventory.
+
+    ``lead_time_mean`` and ``port_delay_factor`` are accepted for signature
+    symmetry with the SimPy path but have no direct effect here — this
+    approximation paces supply arrivals by ``transit_days`` rather than modelling
+    an explicit supplier lead-time draw or a discrete port-clearance stage.
     """
     days           = SIM_DAYS
     supply_per_day = (daily_demand * days / SHIPMENTS_PER_RUN) / (transit_days + 2.0)
@@ -396,7 +442,8 @@ def run_discrete_event(
     impacts: list[ImpactMap],
     forecast: Forecast | None,
     iterations: int,
-) -> dict[str, float | int | str]:
+    overrides: SimOverrides | None = None,
+) -> dict[str, object]:
     """Run a Monte Carlo supply chain simulation and return a results dict.
 
     Parameters
@@ -422,9 +469,16 @@ def run_discrete_event(
         service_level, expected_shortage_units, iterations, assumptions,
         revenue_loss_p50, revenue_loss_p90, engine.
     """
-    risk      = aggregate_risk(classifications)
+    ov = overrides or SimOverrides()
+    # The seed is derived from the *unmodified* scenario risk (below), so every
+    # what-if knob reuses the same random draws and isolates its own effect;
+    # with no overrides the resolved values equal the derivations and the whole
+    # function is byte-identical to before.
+    derived_risk = aggregate_risk(classifications)
+    risk      = ov.risk if ov.risk is not None else derived_risk
     affected  = sum(len(item.affected_entities) for item in impacts)
     n_iters   = max(1, iterations)
+    lead_time_mean = ov.lead_time_mean if ov.lead_time_mean is not None else KAGGLE_LEAD_TIME_MEAN
 
     # --- demand calibration ---
     # The Kaggle CSV rows contain "products sold + 0.35*stock" per SKU, not
@@ -447,7 +501,9 @@ def run_discrete_event(
         baseline_demand = KAGGLE_DAILY_DEMAND  # 30 units/day
         adjusted_demand = baseline_demand * max(0.0, 1.0 - 0.18 * risk)
 
-    daily_demand = max(1.0, adjusted_demand)
+    # A daily_demand override is the FINAL value — the forecast disruption ratio
+    # is intentionally not re-applied on top, so the slider reads back exactly.
+    daily_demand = ov.daily_demand if ov.daily_demand is not None else max(1.0, adjusted_demand)
 
     # opening inventory - sized to bridge the gap until the first shipment
     # arrives, plus a risk-scaled safety buffer.
@@ -465,25 +521,39 @@ def run_discrete_event(
     transit            = _extract_transit_days(impacts)
     port_delay_mean    = 0.5 + risk * 1.5
     transit_risk       = transit * (1.0 + 0.15 * risk)
-    first_ship_eta     = KAGGLE_LEAD_TIME_MEAN + port_delay_mean + transit_risk
+    first_ship_eta     = lead_time_mean + port_delay_mean + transit_risk
     safety_buffer      = 8.0 * (1.0 - risk)
     nominal_cover_days = max(first_ship_eta + safety_buffer, _forecast_inv_days)
     inventory_start    = daily_demand * nominal_cover_days
+    # Opening-inventory what-if: scales the derived opening stock directly, so
+    # the knob always bites (unlike a safety-buffer term buried under the ETA
+    # floor in nominal_cover_days above).
+    if ov.inventory_multiplier is not None:
+        inventory_start *= ov.inventory_multiplier
 
     # --- network calibration from impact data ---
     transit_days         = _extract_transit_days(impacts)
     supplier_reliability = _extract_supplier_reliability(impacts)
+    # Port-node what-if: scales the port-clearance delay. Default 1.0 leaves the
+    # derived (risk-driven) congestion untouched.
+    port_delay_factor    = ov.port_delay_factor if ov.port_delay_factor is not None else 1.0
 
     # Shipment loss rate due to disruption: 5% base (routine damage/rejection)
     # rising to 40% at maximum disruption (quality failures, partial shipments,
     # diversion losses).  Kept below the Kaggle inspection-failure rate (36%)
     # at low risk because inspections catch defects before they become losses.
-    defect_rate = min(0.40, 0.05 + 0.35 * risk)
+    defect_rate = ov.defect_rate if ov.defect_rate is not None else min(0.40, 0.05 + 0.35 * risk)
 
     # --- Monte Carlo ---
     # Deterministic seed so the same scenario produces the same output;
     # varied enough across different risk levels to spread the distribution.
-    seed = 42 + int(risk * 1000) + affected + int(baseline_demand) % 97
+    # Uses derived_risk (not the possibly-overridden risk) so a what-if reuses
+    # the baseline's random draws — isolating the knob under test. reshuffle_seed
+    # opts into a fresh seed to reveal sampling noise instead.
+    if ov.reshuffle_seed:
+        seed = int(np.random.SeedSequence().generate_state(1)[0])
+    else:
+        seed = 42 + int(derived_risk * 1000) + affected + int(baseline_demand) % 97
     rng  = np.random.default_rng(seed)
 
     stockouts:     list[float] = []
@@ -502,12 +572,36 @@ def run_discrete_event(
             inventory_start,
             daily_demand,
             affected,
+            lead_time_mean,
+            port_delay_factor,
         )
         stockouts.append(float(stockout))
         shortages.append(shortage)
         revenues.append(revenue)
         recoveries.append(recovery)
         service_levels.append(sl)
+
+    # --- deterministic "flaw of averages" baseline ---
+    # Run the exact same model once, but with every stochastic input replaced
+    # by its expected value (mean lead time, mean port delay, etc.) via the
+    # _MeanRng shim.  A single averaged-input run cannot express a *probability*
+    # of stockout — it either stocks out or it doesn't — and because shortage
+    # accrues only on the downside (a kink at zero), it typically understates
+    # the true expected loss revealed by sampling.  This is the contrast the
+    # UI surfaces.  A separate _MeanRng object is used so no draw is consumed
+    # from the Monte Carlo generator (which would shift every other statistic).
+    det_stockout, det_shortage, det_revenue, det_recovery, det_service = _run_one_iteration(
+        _MeanRng(),
+        risk,
+        transit_days,
+        supplier_reliability,
+        defect_rate,
+        inventory_start,
+        daily_demand,
+        affected,
+        lead_time_mean,
+        port_delay_factor,
+    )
 
     # --- aggregate statistics ---
     stockout_prob   = float(np.mean(stockouts))
@@ -517,6 +611,25 @@ def run_discrete_event(
     mean_shortage   = float(np.mean(shortages))
     p50_revenue     = float(np.percentile(revenues, 50))
     p90_revenue     = float(np.percentile(revenues, 90))
+
+    # --- revenue-loss distribution histogram ---
+    # Bins for the per-iteration revenue-loss values so the UI can render the
+    # spread the Monte Carlo produced.  A zero-variance distribution (e.g. a
+    # low-risk scenario where no run loses revenue) has no meaningful histogram,
+    # so we return an empty list and let the UI show a "no loss" message rather
+    # than a degenerate one-bar chart.
+    revenue_histogram: list[dict[str, float | int]] = []
+    rev_arr = np.asarray(revenues, dtype=float)
+    if rev_arr.size and float(np.ptp(rev_arr)) > 0:
+        counts, edges = np.histogram(rev_arr, bins=12)
+        revenue_histogram = [
+            {
+                "bin_start": round(float(edges[i]), 2),
+                "bin_end":   round(float(edges[i + 1]), 2),
+                "count":     int(counts[i]),
+            }
+            for i in range(len(counts))
+        ]
 
     # detect which engine ran
     try:
@@ -547,4 +660,19 @@ def run_discrete_event(
         "revenue_loss_p50":        round(p50_revenue, 2),
         "revenue_loss_p90":        round(p90_revenue, 2),
         "engine":                  engine_label,
+        "deterministic_stockout":       bool(det_stockout),
+        "deterministic_revenue_loss":   round(float(det_revenue), 2),
+        "deterministic_shortage_units": round(float(det_shortage), 2),
+        "deterministic_service_level":  round(float(det_service), 4),
+        "deterministic_recovery_days":  round(float(det_recovery), 1),
+        "revenue_histogram":            revenue_histogram,
+        "params": {
+            "risk":                 round(float(risk), 4),
+            "supplier_reliability": round(float(supplier_reliability), 4),
+            "lead_time_mean":       round(float(lead_time_mean), 2),
+            "defect_rate":          round(float(defect_rate), 4),
+            "daily_demand":         round(float(daily_demand), 2),
+            "opening_inventory":    round(float(inventory_start), 2),
+            "iterations":           n_iters,
+        },
     }

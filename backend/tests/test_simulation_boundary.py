@@ -11,10 +11,22 @@ Covers:
 """
 from __future__ import annotations
 
+import numpy as np
 import pytest
+from pydantic import ValidationError
 
-from agentic_scd.agents.schema import Classification, Forecast, ImpactMap, Simulation
-from agentic_scd.agents.sim_engine import run_discrete_event
+from agentic_scd.agents.schema import (
+    Classification,
+    Forecast,
+    ImpactMap,
+    Simulation,
+    SimOverrides,
+)
+from agentic_scd.agents.sim_engine import (
+    _MeanRng,
+    _numpy_fallback_iteration,
+    run_discrete_event,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -250,3 +262,173 @@ def test_result_maps_to_simulation_schema():
     })
     assert 0.0 <= sim.stockout_probability <= 1.0
     assert sim.iterations == 30
+
+
+# ---------------------------------------------------------------------------
+# Deterministic baseline + histogram (flaw-of-averages comparison)
+# ---------------------------------------------------------------------------
+
+def test_mean_rng_returns_expected_values():
+    """_MeanRng must return each distribution's mean, and honour size= so the
+    array-drawing numpy fallback path keeps working."""
+    rng = _MeanRng()
+    assert rng.normal(16.0, 8.8) == 16.0
+    assert rng.exponential(2.5) == 2.5
+    assert rng.poisson(30.0) == 30.0
+    # size= must produce a filled array, not a scalar (the numpy fallback zips
+    # over these — a scalar would raise TypeError).
+    arr = rng.poisson(30.0, size=5)
+    assert isinstance(arr, np.ndarray) and arr.shape == (5,)
+    assert np.all(arr == 30.0)
+
+
+def test_numpy_fallback_accepts_mean_rng():
+    """The numpy fallback (used when SimPy is absent) draws arrays via size=;
+    _MeanRng must drive it without error and return a deterministic tuple."""
+    result = _numpy_fallback_iteration(
+        _MeanRng(),
+        risk=0.6,
+        transit_days=17.0,
+        supplier_reliability=0.8,
+        defect_rate=0.2,
+        inventory=200.0,
+        daily_demand=30.0,
+        n_affected_nodes=3,
+    )
+    stockout, shortage, revenue, recovery, service = result
+    assert isinstance(stockout, bool)
+    assert shortage >= 0.0 and revenue >= 0.0 and recovery > 0.0
+    assert 0.0 <= service <= 1.0
+
+
+def test_deterministic_baseline_keys_present():
+    """The result must carry the deterministic baseline and histogram."""
+    result = run_discrete_event([_cls(9.0)], [_impact()], None, iterations=100)
+    for key in (
+        "deterministic_stockout",
+        "deterministic_revenue_loss",
+        "deterministic_shortage_units",
+        "deterministic_service_level",
+        "deterministic_recovery_days",
+        "revenue_histogram",
+    ):
+        assert key in result, f"missing {key}"
+    assert isinstance(result["deterministic_stockout"], bool)
+
+
+def test_deterministic_baseline_does_not_shift_monte_carlo():
+    """Adding the deterministic pass must not consume from the MC generator:
+    the sampled statistics must be identical across repeated calls."""
+    kwargs = dict(
+        classifications=[_cls(7.2)],
+        impacts=[_impact(["Supplier B"], ["Mumbai-Rotterdam"])],
+        forecast=_forecast(800.0, 14.0),
+        iterations=50,
+    )
+    r1 = run_discrete_event(**kwargs)
+    r2 = run_discrete_event(**kwargs)
+    assert r1["revenue_loss_p50"] == r2["revenue_loss_p50"]
+    assert r1["revenue_loss_p90"] == r2["revenue_loss_p90"]
+    assert r1["stockout_probability"] == r2["stockout_probability"]
+
+
+def test_histogram_well_formed_when_present():
+    """A high-risk scenario spreads revenue loss → non-empty, ordered bins whose
+    counts sum to the iteration count."""
+    n = 100
+    result = run_discrete_event([_cls(9.0)], [_impact()], None, iterations=n)
+    hist = result["revenue_histogram"]
+    assert hist, "expected a non-empty histogram for a high-risk scenario"
+    assert sum(b["count"] for b in hist) == n
+    for b in hist:
+        assert b["bin_end"] >= b["bin_start"]
+        assert b["count"] >= 0
+
+
+def test_histogram_empty_when_no_revenue_loss():
+    """Zero risk → no run loses revenue → degenerate distribution → empty bins
+    (the UI renders a 'no loss' message instead of a broken one-bar chart)."""
+    result = run_discrete_event([], [], None, iterations=50)
+    if result["revenue_impact"] == 0.0:
+        assert result["revenue_histogram"] == []
+
+
+# ---------------------------------------------------------------------------
+# What-if overrides
+# ---------------------------------------------------------------------------
+
+_WHATIF_KW = dict(
+    classifications=[_cls(9.0)],
+    impacts=[_impact()],
+    forecast=_forecast(900.0, 12.0),
+    iterations=120,
+)
+
+
+def test_no_overrides_is_byte_identical():
+    """The default (no-override) path must be unchanged by the what-if plumbing:
+    an empty SimOverrides must reproduce the None-override result exactly."""
+    base = run_discrete_event(**_WHATIF_KW)
+    same = run_discrete_event(**_WHATIF_KW, overrides=SimOverrides())
+    for key in (
+        "stockout_probability",
+        "revenue_loss_p50",
+        "revenue_loss_p90",
+        "service_level",
+        "expected_shortage_units",
+    ):
+        assert base[key] == same[key], f"{key} shifted under empty overrides"
+
+
+def test_params_echo_reports_resolved_values():
+    """The result echoes the resolved knob values so the UI can anchor sliders."""
+    result = run_discrete_event(**_WHATIF_KW, overrides=SimOverrides(risk=0.5, lead_time_mean=20.0))
+    params = result["params"]
+    assert params["risk"] == 0.5
+    assert params["lead_time_mean"] == 20.0
+    assert params["iterations"] == 120
+    assert params["opening_inventory"] > 0.0
+
+
+@pytest.mark.parametrize(
+    "lo,hi",
+    [
+        (SimOverrides(risk=0.05), SimOverrides(risk=0.95)),
+        (SimOverrides(defect_rate=0.0), SimOverrides(defect_rate=0.6)),
+        (SimOverrides(daily_demand=10.0), SimOverrides(daily_demand=80.0)),
+        (SimOverrides(inventory_multiplier=0.5), SimOverrides(inventory_multiplier=2.0)),
+        (SimOverrides(port_delay_factor=0.3), SimOverrides(port_delay_factor=8.0)),
+        (SimOverrides(lead_time_mean=6.0), SimOverrides(lead_time_mean=35.0)),
+    ],
+)
+def test_every_knob_moves_the_outcome(lo, hi):
+    """Each exposed knob must change stockout probability or p90 revenue loss
+    across its range — a dead slider is worse than a missing one."""
+    r_lo = run_discrete_event(**_WHATIF_KW, overrides=lo)
+    r_hi = run_discrete_event(**_WHATIF_KW, overrides=hi)
+    moved = (
+        r_lo["stockout_probability"] != r_hi["stockout_probability"]
+        or r_lo["revenue_loss_p90"] != r_hi["revenue_loss_p90"]
+    )
+    assert moved, f"knob did not move outcome: {lo} vs {hi}"
+
+
+def test_daily_demand_override_is_final_value():
+    """A daily_demand override is the final value — the forecast disruption ratio
+    is not re-applied on top, so the params echo reads back exactly."""
+    result = run_discrete_event(**_WHATIF_KW, overrides=SimOverrides(daily_demand=42.0))
+    assert result["params"]["daily_demand"] == 42.0
+
+
+def test_iterations_cap_rejected():
+    """Iteration count is bounded server-side so a slider can't self-DoS the
+    synchronous request handler."""
+    with pytest.raises(ValidationError):
+        SimOverrides(iterations=10_000)
+
+
+def test_out_of_range_overrides_rejected():
+    with pytest.raises(ValidationError):
+        SimOverrides(risk=1.5)
+    with pytest.raises(ValidationError):
+        SimOverrides(defect_rate=-0.1)

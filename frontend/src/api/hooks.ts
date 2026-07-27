@@ -8,7 +8,9 @@ import type {
   HealthResponse,
   PipelineState,
   RecentRun,
+  Simulation,
   SupplyNetwork,
+  WhatIfRequest,
 } from "../types/state";
 
 export interface RunArgs {
@@ -70,6 +72,13 @@ export function useRunPipeline() {
       queryClient.invalidateQueries({ queryKey: ["runs"] });
       queryClient.invalidateQueries({ queryKey: ["signals"] });
     },
+  });
+}
+
+export function useWhatIf() {
+  return useMutation({
+    mutationFn: async (req: WhatIfRequest) =>
+      (await client.post<Simulation>("/simulate/what-if", req)).data,
   });
 }
 

@@ -70,6 +70,35 @@ export interface Forecast {
   freight_pressure_pct: number;
 }
 
+export interface HistogramBin {
+  bin_start: number;
+  bin_end: number;
+  count: number;
+}
+
+// Resolved knob values a simulation ran with — anchors the what-if sliders.
+export interface SimParams {
+  risk: number;
+  supplier_reliability: number;
+  lead_time_mean: number;
+  defect_rate: number;
+  daily_demand: number;
+  opening_inventory: number;
+  iterations: number;
+}
+
+// What-if knob overrides. Omitted / null fields keep the scenario's derived value.
+export interface SimOverrides {
+  risk?: number | null;
+  lead_time_mean?: number | null;
+  port_delay_factor?: number | null;
+  defect_rate?: number | null;
+  daily_demand?: number | null;
+  inventory_multiplier?: number | null;
+  iterations?: number | null;
+  reshuffle_seed?: boolean;
+}
+
 export interface Simulation {
   stockout_probability: number;
   revenue_impact: number;
@@ -81,6 +110,25 @@ export interface Simulation {
   revenue_loss_p50: number;
   revenue_loss_p90: number;
   engine: string;
+  // Deterministic "flaw of averages" baseline — same model, mean inputs.
+  deterministic_stockout: boolean;
+  deterministic_revenue_loss: number;
+  deterministic_shortage_units: number;
+  deterministic_service_level: number;
+  deterministic_recovery_days: number;
+  // Per-iteration revenue-loss distribution (empty when no run lost revenue).
+  revenue_histogram: HistogramBin[];
+  // Resolved knob values this run used (null on legacy / no-impact runs).
+  params?: SimParams | null;
+}
+
+// Body of POST /simulate/what-if — the current run's already-computed inputs
+// plus the knob overrides to re-simulate with.
+export interface WhatIfRequest {
+  classifications: Classification[];
+  impacts: ImpactMap[];
+  forecast?: Forecast | null;
+  overrides: SimOverrides;
 }
 
 export interface MitigationAction {

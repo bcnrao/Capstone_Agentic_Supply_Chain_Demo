@@ -4,7 +4,14 @@ from typing import TYPE_CHECKING
 
 from agentic_scd.agents.sim_engine import run_discrete_event
 from agentic_scd.agents.forecast import aggregate_risk
-from agentic_scd.agents.schema import Classification, Forecast, ImpactMap, Simulation
+from agentic_scd.agents.schema import (
+    Classification,
+    Forecast,
+    ImpactMap,
+    Simulation,
+    SimOverrides,
+    SimParams,
+)
 from agentic_scd.config import get_settings
 from agentic_scd.rag.retriever import simulation_retriever
 
@@ -41,9 +48,14 @@ def simulation_context(
     return rows[:4], round(min(1.12, multiplier), 4)
 
 
-def run_simulation(classifications: list[Classification], impacts: list[ImpactMap], forecast: Forecast | None = None, iterations: int | None = None) -> Simulation:
+def run_simulation(classifications: list[Classification], impacts: list[ImpactMap], forecast: Forecast | None = None, iterations: int | None = None, overrides: SimOverrides | None = None) -> Simulation:
     settings = get_settings()
-    n = iterations or settings.simulation_iterations
+    # A what-if iteration override wins over the caller's iterations arg, which
+    # in turn wins over the configured default.
+    if overrides and overrides.iterations:
+        n = overrides.iterations
+    else:
+        n = iterations or settings.simulation_iterations
     risk = aggregate_risk(classifications)
     affected = sum(len(item.affected_entities) for item in impacts)
     # No affected network entities => no material impact on our chain, even at
@@ -51,7 +63,7 @@ def run_simulation(classifications: list[Classification], impacts: list[ImpactMa
     if affected <= 0:
         return Simulation(stockout_probability=0.0, revenue_impact=0.0, recovery_time_days=0.0, service_level=1.0, expected_shortage_units=0.0, iterations=n, assumptions="No affected network nodes — no material impact simulated.", engine="discrete_event_local")
     retrieved_context, calibration = simulation_context(classifications, impacts, forecast)
-    data = run_discrete_event(classifications, impacts, forecast, n)
+    data = run_discrete_event(classifications, impacts, forecast, n, overrides)
     stockout_probability = min(1.0, float(data["stockout_probability"]) * min(1.05, calibration))
     revenue_impact = float(data["revenue_impact"]) * calibration
     recovery_time_days = float(data["recovery_time_days"]) * (1.0 + max(0.0, calibration - 1.0) * 0.6)
@@ -71,6 +83,18 @@ def run_simulation(classifications: list[Classification], impacts: list[ImpactMa
         revenue_loss_p90=float(data["revenue_loss_p90"]),
         engine=str(data["engine"]),
         retrieved_context=retrieved_context,
+        # Deterministic baseline + distribution are kept in the engine's raw
+        # (unscaled) revenue units so they stay consistent with the unscaled
+        # p50/p90 markers the UI overlays on the histogram. The calibration
+        # multiplier is intentionally applied only to the mean revenue_impact
+        # tile above, matching the existing p50/p90 passthrough.
+        deterministic_stockout=bool(data["deterministic_stockout"]),
+        deterministic_revenue_loss=float(data["deterministic_revenue_loss"]),
+        deterministic_shortage_units=float(data["deterministic_shortage_units"]),
+        deterministic_service_level=float(data["deterministic_service_level"]),
+        deterministic_recovery_days=float(data["deterministic_recovery_days"]),
+        revenue_histogram=data["revenue_histogram"],
+        params=SimParams(**data["params"]) if data.get("params") else None,
     )
 
 
