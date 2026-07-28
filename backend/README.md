@@ -33,5 +33,12 @@ Traces LangGraph pipeline runs to [LangSmith Cloud](https://smith.langchain.com)
 Docker Compose passes the same env vars into the `api` and `app` services. See the
 repo-root README for full stack instructions.
 
+### Online LLM-as-judge
+
+Root runs attach plain `outputs.recommendation` for LangSmith’s online evaluator UI.
+Configure **Recommendation Quality Judge** on project `genAI` with filter
+`Supply Chain Disruption Pipeline` and feedback key `recommendation_quality`.
+Full rubric, mapping, and verification steps: repo-root **README → LangSmith LLM-as-judge (online)**.
+
 See the **repo-root `README.md`** for the full quick start (Docker and uv paths),
 architecture, and per-phase documentation.

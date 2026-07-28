@@ -10,7 +10,7 @@ from agentic_scd.db import connect, init_db
 from agentic_scd.graph import GraphState, build_graph
 from agentic_scd.ingestion.collect import collect
 from agentic_scd.ingestion.store import mark_done, save_run_result, serialize_state
-from agentic_scd.observability import build_run_config, configure_tracing
+from agentic_scd.observability import build_run_config, configure_tracing, invoke_traced_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +54,10 @@ def run(scenario_name: str | None = None, *, use_pending_signals: bool = False) 
         model_name=settings.groq_model,
         provider="groq" if not settings.llm_is_mock else "mock",
     )
-    result: GraphState = graph.invoke(initial, config=config)
+    result: GraphState = invoke_traced_pipeline(graph, initial, config)
     result["run_id"] = run_id
+    if scenario_name:
+        result["scenario_name"] = scenario_name
     try:
         init_db()
         with connect() as conn:

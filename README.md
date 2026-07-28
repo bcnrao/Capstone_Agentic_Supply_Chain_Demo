@@ -99,6 +99,68 @@ Traces every LangGraph pipeline run (nodes, Groq LLM calls, RAG searches) to
 Legacy `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` names are still
 accepted and mapped automatically.
 
+## LangSmith LLM-as-judge (online)
+
+An **online LLM-as-a-judge** scores each pipeline root run in LangSmith (recommendation
+quality). Scores appear as **feedback** on the trace — the app agents themselves are unchanged.
+
+Docs: [online LLM-as-a-judge](https://docs.langchain.com/langsmith/online-evaluations-llm-as-judge),
+[configure evaluator](https://docs.langchain.com/langsmith/llm-as-judge).
+
+### Prerequisites
+
+1. Tracing works to project **`genAI`** (`LANGSMITH_TRACING=true` + API key).
+2. In LangSmith **Settings**, add a secret for the **judge model** (UI default is often
+   `gpt-3.5-turbo` → OpenAI key). This is separate from the app’s `GROQ_API_KEY`.
+3. Root runs expose plain `inputs` / `outputs.recommendation` for mapping (attached by
+   `invoke_traced_pipeline` in the backend).
+
+### Configure in the UI
+
+1. Open [smith.langchain.com](https://smith.langchain.com) → Tracing → project **`genAI`**.
+2. **Evaluators** → **+ Evaluator** → **LLM-as-a-Judge**.
+3. Use these settings:
+
+| Field | Value |
+|--------|--------|
+| Name | `Recommendation Quality Judge` |
+| Source | `genAI` |
+| Enabled | On |
+| Model | `gpt-3.5-turbo` (or a model your workspace supports) |
+| Run filter | Run name equals **`Supply Chain Disruption Pipeline`** (root only — do not score nested `RAG Search` / node spans) |
+| Sampling | `1.0` for demos; `0.1` to control cost |
+| Feedback key | `recommendation_quality` |
+| Feedback type | Continuous **0–1** |
+
+### Rubric to paste (Mustache)
+
+Persona: You are a supply-chain operations reviewer.
+
+Score the **recommendation** (summary, actions, evidence) given the signal/context:
+
+- **1.0** — Clear, actionable plan; urgency fits severity; evidence ties to the disruption; no filler.
+- **0.5** — Partially useful; vague actions or weak evidence.
+- **0.0** — Empty, contradictory, or irrelevant to the event.
+
+Instructions: use only the mapped inputs/outputs; return the structured feedback score LangSmith requests.
+
+### Variable mapping
+
+- `{{input}}` → root run **inputs** (`scenario_name`, `signal_titles`)
+- `{{output}}` → root run **outputs.recommendation** (or the full `outputs` object)
+
+### Verify
+
+```bash
+docker compose up -d --force-recreate api
+curl -X POST http://localhost:8000/run -H 'Content-Type: application/json' \
+  -d '{"scenario_name": "Typhoon approaching Shanghai Port"}'
+```
+
+Then open the new **Supply Chain Disruption Pipeline** trace in `genAI`. Within ~30–60s you
+should see feedback **`recommendation_quality`**. Nested spans should not get that feedback.
+If missing: Evaluators → evaluator → **Logs** (filter mismatch, missing OpenAI secret, spend limit).
+
 ## Project layout
 
 ```
