@@ -104,7 +104,7 @@ def baseline_projection(horizon: int, settings: Settings | None = None) -> tuple
     return baseline, baseline_source, "local_trend"
 
 
-def adjusted_projection(baseline: list[float], risk: float, impact_count: int, freight_delta: float, category: str = "") -> tuple[list[float], float]:
+def adjusted_projection(baseline: list[float], risk: float, impact_count: int, freight_delta: float, category: str = "", exposure: float = 1.0) -> tuple[list[float], float]:
     if not baseline:
         return [], 0.0
     if risk <= 0 and impact_count <= 0:
@@ -127,6 +127,10 @@ def adjusted_projection(baseline: list[float], risk: float, impact_count: int, f
     }
     cat_mult = CATEGORY_MULTIPLIER.get(category.lower().strip(), 1.0)
     disruption_factor = min(0.62, risk * (0.16 + 0.022 * impact_count) * cat_mult + shock * 0.55)
+    # Product-category exposure: 1.0 leaves the aggregate behavior byte-identical;
+    # a per-category caller passes < 1.0 to damp the shock for product lines the
+    # disruption only touches indirectly (spillover through shared logistics).
+    disruption_factor *= exposure
     recovery_factor = min(0.12, relief * 0.2)
     horizon = len(baseline)
     adjusted = []

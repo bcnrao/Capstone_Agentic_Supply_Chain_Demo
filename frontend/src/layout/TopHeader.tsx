@@ -3,18 +3,13 @@ import {
   App as AntApp,
   Badge,
   Button,
-  Dropdown,
   Select,
   Space,
   Typography,
 } from "antd";
 import {
-  CloudDownloadOutlined,
-  DownloadOutlined,
-  MoreOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
-  SettingOutlined,
 } from "@ant-design/icons";
 import { useLocation } from "react-router-dom";
 
@@ -34,25 +29,11 @@ const MISSION_SEQUENCE: MissionStep[] = [
   "complete",
 ];
 
-function downloadReport(state: unknown, scenarioLabel?: string) {
-  const blob = new Blob([JSON.stringify(state, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  anchor.href = url;
-  anchor.download = `supply-chain-copilot-report-${scenarioLabel ?? "default"}-${stamp}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function TopHeader() {
   const { message } = AntApp.useApp();
   const location = useLocation();
   const meta = metaForPath(location.pathname);
   const {
-    state,
     scenarios,
     setScenarios,
     setState,
@@ -60,7 +41,6 @@ export default function TopHeader() {
     setLastUpdated,
     setMissionStep,
     addActivity,
-    setConfigOpen,
   } = useDashboard();
 
   const { data: availableScenarios } = useScenarios();
@@ -134,33 +114,6 @@ export default function TopHeader() {
     }
   };
 
-  const handleExport = () => {
-    if (!state) {
-      message.warning("Run analysis first to export a report");
-      return;
-    }
-    const scenarioLabel =
-      scenarios.length === 0
-        ? "default"
-        : scenarios.length === 1
-          ? scenarios[0]
-          : `${scenarios.length}-scenarios`;
-    downloadReport(state, scenarioLabel);
-    addActivity("Report exported", "info");
-    message.success("Report downloaded");
-  };
-
-  const overflowItems = {
-    items: [
-      {
-        key: "collect",
-        label: "Refresh external data",
-        icon: <CloudDownloadOutlined />,
-        onClick: handleCollect,
-      },
-    ],
-  };
-
   const liveLabel = lastUpdated
     ? `Last updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
     : "Awaiting first run";
@@ -196,15 +149,6 @@ export default function TopHeader() {
         >
           Run Analysis
         </Button>
-        <Button icon={<DownloadOutlined />} onClick={handleExport}>
-          Export Report
-        </Button>
-        <Button icon={<SettingOutlined />} onClick={() => setConfigOpen(true)}>
-          Settings
-        </Button>
-        <Dropdown menu={overflowItems} trigger={["click"]}>
-          <Button icon={<MoreOutlined />} />
-        </Dropdown>
       </Space>
     </header>
   );

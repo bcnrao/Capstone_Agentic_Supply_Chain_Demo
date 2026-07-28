@@ -94,6 +94,9 @@ def run_simulation(classifications: list[Classification], impacts: list[ImpactMa
         deterministic_service_level=float(data["deterministic_service_level"]),
         deterministic_recovery_days=float(data["deterministic_recovery_days"]),
         revenue_histogram=data["revenue_histogram"],
+        shortage_histogram=data["shortage_histogram"],
+        service_level_histogram=data["service_level_histogram"],
+        stockout_histogram=data["stockout_histogram"],
         params=SimParams(**data["params"]) if data.get("params") else None,
     )
 

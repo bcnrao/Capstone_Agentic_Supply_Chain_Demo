@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from agentic_scd.agents.forecast_engine import adjusted_projection, baseline_projection, freight_pressure
-from agentic_scd.agents.schema import Classification, Forecast, ImpactMap
+from agentic_scd.agents.schema import CategoryForecast, Classification, Forecast, ImpactMap
+from agentic_scd.data.history import seed_dataset_values_by_category
 from agentic_scd.ingestion.paths import SEED_DIR
 from agentic_scd.rag.retriever import forecast_retriever
 
@@ -16,6 +17,66 @@ if TYPE_CHECKING:
     from agentic_scd.graph.state import GraphState
 
 HORIZON = 8
+
+# Risk-adjustment weight for product categories the disruption only touches
+# indirectly (shared logistics), vs 1.0 for the categories it hits directly.
+SPILLOVER_EXPOSURE = 0.4
+
+
+def build_category_forecasts(
+    baseline: list[float],
+    impacts: list[ImpactMap],
+    risk: float,
+    affected: int,
+    freight_delta: float,
+    dominant_category: str,
+) -> list[CategoryForecast]:
+    """Split the aggregate forecast into per-product-category slices.
+
+    Each category's baseline is the aggregate baseline scaled by that category's
+    historical share of total demand (so the slices sum back to the aggregate).
+    Categories named in the impact map's product lines take the full risk
+    adjustment; the rest take a damped (spillover) one.
+    """
+    cat_values = seed_dataset_values_by_category()
+    if not cat_values or not baseline:
+        return []
+    total = sum(sum(values) for values in cat_values.values())
+    affected_products = {
+        product.lower().strip()
+        for impact in impacts
+        for product in impact.product_categories
+    }
+    forecasts: list[CategoryForecast] = []
+    for category in sorted(cat_values):
+        share = (
+            sum(cat_values[category]) / total
+            if total > 0
+            else 1.0 / len(cat_values)
+        )
+        cat_baseline = [round(value * share, 2) for value in baseline]
+        is_affected = category.lower() in affected_products
+        if affected <= 0:
+            cat_adjusted = [round(value, 2) for value in cat_baseline]
+        else:
+            exposure = 1.0 if is_affected else SPILLOVER_EXPOSURE
+            cat_adjusted, _ = adjusted_projection(
+                cat_baseline, risk, affected, freight_delta, dominant_category, exposure
+            )
+        base_sum = sum(cat_baseline)
+        deviation = (
+            0.0 if base_sum <= 0 else round(100 * (sum(cat_adjusted) - base_sum) / base_sum, 2)
+        )
+        forecasts.append(
+            CategoryForecast(
+                category=category,
+                baseline=cat_baseline,
+                adjusted=cat_adjusted,
+                demand_deviation_pct=deviation,
+                affected=is_affected,
+            )
+        )
+    return forecasts
 
 
 def aggregate_risk(classifications: list[Classification]) -> float:
@@ -107,6 +168,9 @@ def build_forecast(classifications: list[Classification], impacts: list[ImpactMa
         f"{freight_source} ({freight_delta:+.1%}). Retrieved context pressure: "
         f"{context_pressure:+.1%} from {len(retrieved_context)} local records."
     )
+    category_forecasts = build_category_forecasts(
+        baseline, impacts, risk, affected, freight_delta + context_pressure, dominant_category
+    )
     return Forecast(
         dates=dates,
         baseline=baseline,
@@ -119,6 +183,7 @@ def build_forecast(classifications: list[Classification], impacts: list[ImpactMa
         model_name=model_name,
         freight_pressure_pct=round((freight_delta + context_pressure) * 100.0, 2),
         retrieved_context=retrieved_context,
+        category_forecasts=category_forecasts,
     )
 
 

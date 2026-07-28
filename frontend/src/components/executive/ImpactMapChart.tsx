@@ -9,7 +9,7 @@ import {
 
 import { useNetwork } from "../../api/hooks";
 import type { PipelineState } from "../../types/state";
-import { buildMapData, levelColor } from "../../utils/mapData";
+import { buildMapData, levelColor, regionTint } from "../../utils/mapData";
 
 const { Text } = Typography;
 const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
@@ -20,7 +20,13 @@ interface Props {
 
 export default function ImpactMapChart({ state }: Props) {
   const { data: network, isLoading } = useNetwork();
-  const { nodes, arcs } = buildMapData(state, network);
+  const { nodes, arcs, regions } = buildMapData(state, network);
+
+  // Country name -> impacted region, so we can shade the polygons the run
+  // flagged. Matched against `geo.properties.name` (world-atlas 110m).
+  const regionByCountry = new Map(
+    regions.map((region) => [region.country.toLowerCase(), region]),
+  );
 
   return (
     <Card
@@ -36,19 +42,25 @@ export default function ImpactMapChart({ state }: Props) {
           <ComposableMap projectionConfig={{ scale: 140 }}>
             <Geographies geography={GEO_URL}>
               {({ geographies }) =>
-                geographies.map((geo) => (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    fill="#e8edf3"
-                    stroke="#d0d7e2"
-                    style={{
-                      default: { outline: "none" },
-                      hover: { fill: "#dde4ee", outline: "none" },
-                      pressed: { outline: "none" },
-                    }}
-                  />
-                ))
+                geographies.map((geo) => {
+                  const name =
+                    (geo.properties as { name?: string } | undefined)?.name ?? "";
+                  const hit = regionByCountry.get(name.toLowerCase());
+                  const fill = hit ? regionTint(hit.level) : "#e8edf3";
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      fill={fill}
+                      stroke={hit ? "#bfbfbf" : "#d0d7e2"}
+                      style={{
+                        default: { outline: "none" },
+                        hover: { fill: hit ? fill : "#dde4ee", outline: "none" },
+                        pressed: { outline: "none" },
+                      }}
+                    />
+                  );
+                })
               }
             </Geographies>
 
@@ -94,6 +106,12 @@ export default function ImpactMapChart({ state }: Props) {
       {!state && (
         <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
           Baseline network shown in muted colors. Run analysis to highlight impacted lanes.
+        </Text>
+      )}
+      {state && regions.length > 0 && (
+        <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
+          Shaded countries are the {regions.length} region
+          {regions.length === 1 ? "" : "s"} this run flagged as impacted, tinted by severity.
         </Text>
       )}
     </Card>

@@ -59,6 +59,19 @@ class ImpactMap(BaseModel):
         return self
 
 
+class CategoryForecast(BaseModel):
+    """Per-product-category slice of the demand forecast. Baseline is the
+    aggregate baseline scaled by the category's historical share of total demand,
+    so the categories sum back to the aggregate. `affected` marks categories the
+    disruption hit directly (via the impact map's product lines); those take the
+    full risk adjustment, spillover categories take a damped one."""
+    category: str
+    baseline: list[float] = Field(default_factory=list)
+    adjusted: list[float] = Field(default_factory=list)
+    demand_deviation_pct: float = 0.0
+    affected: bool = False
+
+
 class Forecast(BaseModel):
     dates: list[str] = Field(default_factory=list)
     baseline: list[float] = Field(default_factory=list)
@@ -71,6 +84,8 @@ class Forecast(BaseModel):
     model_name: str = ""
     freight_pressure_pct: float = 0.0
     retrieved_context: list[str] = Field(default_factory=list)
+    # Per-product-category demand breakdown (empty on legacy cached runs).
+    category_forecasts: list[CategoryForecast] = Field(default_factory=list)
 
 
 class HistogramBin(BaseModel):
@@ -140,8 +155,13 @@ class Simulation(BaseModel):
     deterministic_shortage_units: float = 0.0
     deterministic_service_level: float = 1.0
     deterministic_recovery_days: float = 0.0
-    # Per-iteration revenue-loss distribution (empty when no run lost revenue).
+    # Per-iteration distribution histograms (empty when a run has no spread).
+    # revenue/shortage/service_level share a shape (all driven by per-run
+    # shortage); stockout is a two-bin split of runs that stocked out vs held.
     revenue_histogram: list[HistogramBin] = Field(default_factory=list)
+    shortage_histogram: list[HistogramBin] = Field(default_factory=list)
+    service_level_histogram: list[HistogramBin] = Field(default_factory=list)
+    stockout_histogram: list[HistogramBin] = Field(default_factory=list)
     # Resolved knob values this run used — lets the what-if UI anchor its sliders.
     params: SimParams | None = None
 

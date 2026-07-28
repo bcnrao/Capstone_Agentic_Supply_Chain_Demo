@@ -1,7 +1,7 @@
 import type { Forecast, MitigationAction, Simulation } from "../types/state";
 
 function money(value: number): string {
-  return `$${Math.round(value).toLocaleString("en-US")}`;
+  return `₹${Math.round(value).toLocaleString("en-IN")}`;
 }
 
 function signedPct(value: number): string {

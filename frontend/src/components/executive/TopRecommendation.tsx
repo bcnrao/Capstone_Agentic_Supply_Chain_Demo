@@ -4,7 +4,6 @@ import {
   ArrowLeftOutlined,
   ArrowRightOutlined,
   CheckCircleOutlined,
-  PlayCircleOutlined,
 } from "@ant-design/icons";
 
 import type { PipelineState } from "../../types/state";
@@ -53,7 +52,7 @@ export default function TopRecommendation({ state }: Props) {
       <Paragraph type="secondary">{state?.recommendation?.summary}</Paragraph>
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
-          <Statistic title="Savings" value={savings} prefix="$" precision={0} />
+          <Statistic title="Savings" value={savings} prefix="₹" precision={0} />
         </Col>
         <Col span={8}>
           <Statistic title="Delay Reduction" value={Math.max(0, 14 - delay)} suffix=" days" />
@@ -63,9 +62,6 @@ export default function TopRecommendation({ state }: Props) {
         </Col>
       </Row>
       <Space>
-        <Button type="primary" icon={<PlayCircleOutlined />} style={{ background: "#389e0d" }}>
-          Run What-if
-        </Button>
         <Button icon={<CheckCircleOutlined />}>Approve Action</Button>
         <Button
           icon={<ArrowLeftOutlined />}

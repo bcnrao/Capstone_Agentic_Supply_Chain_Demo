@@ -433,6 +433,31 @@ def _numpy_fallback_iteration(
     return stockout, shortage, revenue_lost, recovery_days, service_level
 
 
+def _bin_histogram(
+    values: "list[float] | np.ndarray",
+    bins: int = 12,
+    precision: int = 2,
+) -> list[dict[str, float | int]]:
+    """Bin per-iteration values into a HistogramBin-shaped list.
+
+    A zero-variance distribution (every run identical) has no meaningful spread
+    to chart, so we return an empty list and let the UI show a "no variation"
+    note rather than a degenerate one-bar chart.
+    """
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0 or float(np.ptp(arr)) <= 0:
+        return []
+    counts, edges = np.histogram(arr, bins=bins)
+    return [
+        {
+            "bin_start": round(float(edges[i]), precision),
+            "bin_end":   round(float(edges[i + 1]), precision),
+            "count":     int(counts[i]),
+        }
+        for i in range(len(counts))
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Public entry point — called by simulate.py (signature must not change)
 # ---------------------------------------------------------------------------
@@ -612,24 +637,26 @@ def run_discrete_event(
     p50_revenue     = float(np.percentile(revenues, 50))
     p90_revenue     = float(np.percentile(revenues, 90))
 
-    # --- revenue-loss distribution histogram ---
-    # Bins for the per-iteration revenue-loss values so the UI can render the
-    # spread the Monte Carlo produced.  A zero-variance distribution (e.g. a
-    # low-risk scenario where no run loses revenue) has no meaningful histogram,
-    # so we return an empty list and let the UI show a "no loss" message rather
-    # than a degenerate one-bar chart.
-    revenue_histogram: list[dict[str, float | int]] = []
-    rev_arr = np.asarray(revenues, dtype=float)
-    if rev_arr.size and float(np.ptp(rev_arr)) > 0:
-        counts, edges = np.histogram(rev_arr, bins=12)
-        revenue_histogram = [
-            {
-                "bin_start": round(float(edges[i]), 2),
-                "bin_end":   round(float(edges[i + 1]), 2),
-                "count":     int(counts[i]),
-            }
-            for i in range(len(counts))
-        ]
+    # --- per-iteration distribution histograms ---
+    # Bin the raw per-run outcomes so the UI can render the spread the Monte
+    # Carlo produced instead of a single point estimate.  These three continuous
+    # metrics are all driven by the same per-run `shortage` value
+    # (revenue_lost = shortage * REVENUE_PER_UNIT; service_level = 1 -
+    # shortage/total_demand), so their histograms share a shape — the axes and
+    # framing differ, not the underlying distribution.
+    revenue_histogram       = _bin_histogram(revenues,       bins=12, precision=2)
+    shortage_histogram      = _bin_histogram(shortages,      bins=12, precision=2)
+    service_level_histogram = _bin_histogram(service_levels, bins=12, precision=4)
+
+    # Stockout is a per-run Bernoulli outcome (shortage > 0), so its "spread" is
+    # a two-way split: how many of the runs stocked out vs held service.  We emit
+    # it as two fixed count bins so the UI can show that split as bars.
+    stockout_arr = np.asarray(stockouts, dtype=float)
+    n_stockout   = int((stockout_arr > 0.5).sum())
+    stockout_histogram: list[dict[str, float | int]] = [
+        {"bin_start": 0.0, "bin_end": 1.0, "count": int(stockout_arr.size) - n_stockout},
+        {"bin_start": 1.0, "bin_end": 2.0, "count": n_stockout},
+    ]
 
     # detect which engine ran
     try:
@@ -666,6 +693,9 @@ def run_discrete_event(
         "deterministic_service_level":  round(float(det_service), 4),
         "deterministic_recovery_days":  round(float(det_recovery), 1),
         "revenue_histogram":            revenue_histogram,
+        "shortage_histogram":           shortage_histogram,
+        "service_level_histogram":      service_level_histogram,
+        "stockout_histogram":           stockout_histogram,
         "params": {
             "risk":                 round(float(risk), 4),
             "supplier_reliability": round(float(supplier_reliability), 4),

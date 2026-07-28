@@ -63,6 +63,28 @@ def seed_dataset_values(path: Path | None = None) -> list[float]:
     return values
 
 
+def seed_dataset_values_by_category(path: Path | None = None) -> dict[str, list[float]]:
+    """Same per-SKU demand proxy as ``seed_dataset_values`` but grouped by the
+    CSV's ``Product type`` column (haircare / skincare / cosmetics / …). Used to
+    derive each product category's historical share of total demand."""
+    csv_path = path or SEED_DIR / "supply_chain_dataset.csv"
+    if not csv_path.exists():
+        return {}
+    groups: dict[str, list[float]] = {}
+    with csv_path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            category = (row.get("Product type") or "").strip()
+            if not category:
+                continue
+            try:
+                demand = float(row.get("Number of products sold", 0))
+                stock = float(row.get("Stock levels", 0))
+            except ValueError:
+                continue
+            groups.setdefault(category, []).append(max(10.0, demand + 0.35 * stock))
+    return groups
+
+
 def database_dataset_values(settings: Settings | None = None) -> list[float]:
     settings = settings or get_settings()
     if not init_db(settings):

@@ -42,7 +42,93 @@ function inrCompact(value: number): string {
   return value >= 1000 ? `₹${(value / 1000).toFixed(1)}k` : `₹${Math.round(value)}`;
 }
 
-/** Reusable revenue-loss distribution chart (baseline and what-if share it). */
+/** % axis label for the service-level tile: 0.94 -> "94%". */
+function pct(value: number): string {
+  return `${(value * 100).toFixed(0)}%`;
+}
+
+/** Units axis label for the shortage tile: 128.4 -> "128u". */
+function units(value: number): string {
+  return `${Math.round(value)}u`;
+}
+
+/** Categorical axis label for the stockout tile's two count bins. */
+function stockoutLabel(binStart: number): string {
+  return binStart >= 1 ? "Stockout" : "No stockout";
+}
+
+/** One distribution tile: bins a per-run metric into a bar chart. When `p90`
+ *  is supplied, bars at or beyond it are tinted as the tail-risk region and a
+ *  legend is shown (used by the revenue tile); otherwise a single body color is
+ *  used with no legend. */
+function MetricHistogram({
+  histogram,
+  title,
+  caption,
+  xTitle,
+  formatAxis,
+  formatRange,
+  p90,
+  height = 240,
+  emptyNote,
+}: {
+  histogram?: HistogramBin[];
+  title: string;
+  caption?: ReactNode;
+  xTitle: string;
+  formatAxis: (value: number) => string;
+  formatRange: (start: number, end: number) => string;
+  p90?: number;
+  height?: number;
+  emptyNote?: ReactNode;
+}) {
+  const histData = (histogram ?? []).map((bin) => {
+    const mid = (bin.bin_start + bin.bin_end) / 2;
+    return {
+      label: formatAxis(bin.bin_start),
+      start: bin.bin_start,
+      end: bin.bin_end,
+      count: bin.count,
+      tier: p90 != null && mid >= p90 ? SERIES_TAIL : SERIES_BODY,
+    };
+  });
+
+  return (
+    <div>
+      <Text strong style={{ fontSize: 13 }}>
+        {title}
+      </Text>
+      {caption && (
+        <Paragraph type="secondary" style={{ margin: "4px 0 10px", fontSize: 12 }}>
+          {caption}
+        </Paragraph>
+      )}
+      {histData.length === 0 ? (
+        <Paragraph type="secondary" style={{ marginTop: 8, fontSize: 12 }}>
+          {emptyNote ?? "No spread across runs to chart — every run landed on the same value."}
+        </Paragraph>
+      ) : (
+        <Column
+          data={histData}
+          xField="label"
+          yField="count"
+          colorField="tier"
+          scale={{ color: { domain: [SERIES_BODY, SERIES_TAIL], range: [COLOR_BODY, COLOR_TAIL] } }}
+          legend={p90 != null ? { color: { position: "top" } } : false}
+          height={height}
+          axis={{ x: { title: xTitle }, y: { title: "Number of runs" } }}
+          tooltip={{
+            title: (d: { start: number; end: number }) => formatRange(d.start, d.end),
+            items: [{ field: "count", name: "Runs" }],
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Revenue-loss distribution — thin wrapper over MetricHistogram, reused by the
+ *  baseline grid and the what-if panel. */
 function RevenueHistogram({
   histogram,
   p90,
@@ -54,47 +140,18 @@ function RevenueHistogram({
   title: string;
   caption: ReactNode;
 }) {
-  const histData = (histogram ?? []).map((bin) => {
-    const mid = (bin.bin_start + bin.bin_end) / 2;
-    return {
-      label: inrCompact(bin.bin_start),
-      start: bin.bin_start,
-      end: bin.bin_end,
-      count: bin.count,
-      tier: mid >= p90 ? SERIES_TAIL : SERIES_BODY,
-    };
-  });
-
-  if (histData.length === 0) {
-    return (
-      <Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
-        No run lost revenue in this scenario — the distribution is a single point at ₹0, so there is
-        no spread to chart.
-      </Paragraph>
-    );
-  }
-
   return (
     <div style={{ marginTop: 12 }}>
-      <Text strong style={{ fontSize: 13 }}>
-        {title}
-      </Text>
-      <Paragraph type="secondary" style={{ margin: "4px 0 10px", fontSize: 12 }}>
-        {caption}
-      </Paragraph>
-      <Column
-        data={histData}
-        xField="label"
-        yField="count"
-        colorField="tier"
-        scale={{ color: { domain: [SERIES_BODY, SERIES_TAIL], range: [COLOR_BODY, COLOR_TAIL] } }}
-        legend={{ color: { position: "top" } }}
+      <MetricHistogram
+        histogram={histogram}
+        title={title}
+        caption={caption}
+        xTitle="Revenue loss per run (₹) →"
+        formatAxis={inrCompact}
+        formatRange={(start, end) => `${inr(start)} – ${inr(end)}`}
+        p90={p90}
         height={280}
-        axis={{ x: { title: "Revenue loss per run (₹) →" }, y: { title: "Number of runs" } }}
-        tooltip={{
-          title: (d: { start: number; end: number }) => `${inr(d.start)} – ${inr(d.end)}`,
-          items: [{ field: "count", name: "Runs" }],
-        }}
+        emptyNote="No run lost revenue in this scenario — the distribution is a single point at ₹0, so there is no spread to chart."
       />
     </div>
   );
@@ -331,7 +388,7 @@ export default function SimulationLab() {
             title="Revenue impact (mean)"
             help="Average revenue lost to shortages across all runs."
             value={sim.revenue_impact}
-            precision={0}
+            formatter={(v) => inr(Number(v))}
           />
         </Col>
         <Col xs={12} md={6}>
@@ -339,7 +396,7 @@ export default function SimulationLab() {
             title="Revenue loss p50"
             help="Median (typical-case) revenue loss — half of runs are below this."
             value={sim.revenue_loss_p50}
-            precision={0}
+            formatter={(v) => inr(Number(v))}
           />
         </Col>
         <Col xs={12} md={6}>
@@ -347,7 +404,7 @@ export default function SimulationLab() {
             title="Revenue loss p90"
             help="Tail-risk revenue loss — only 1 in 10 runs is worse than this."
             value={sim.revenue_loss_p90}
-            precision={0}
+            formatter={(v) => inr(Number(v))}
           />
         </Col>
         <Col xs={12} md={6}>
@@ -361,22 +418,65 @@ export default function SimulationLab() {
 
       {hasComparison && hasRisk && (
         <div style={{ marginTop: 28 }}>
-          <RevenueHistogram
-            histogram={sim.revenue_histogram}
-            p90={p90}
-            title={`Distribution of revenue loss across ${sim.iterations.toLocaleString()} runs`}
-            caption={
-              <>
-                Each bar counts how many simulated runs landed in that revenue-loss band, labeled by
-                the band's lower edge. Bars past the{" "}
-                <Text style={{ color: COLOR_TAIL }} strong>
-                  p90 threshold
-                </Text>{" "}
-                ({inr(p90)}) mark the tail-risk region — the severe outcomes a single point estimate
-                never shows.
-              </>
-            }
-          />
+          <Text strong style={{ fontSize: 14 }}>
+            Outcome distributions across {sim.iterations.toLocaleString()} runs
+          </Text>
+          <Paragraph type="secondary" style={{ margin: "6px 0 4px", fontSize: 12 }}>
+            Each Monte Carlo run is one possible future. These four tiles show how the key outcomes
+            spread across every run — the shape a single point estimate hides. Revenue loss, expected
+            shortage and service level are three views of the same per-run shortage (revenue ={" "}
+            shortage × unit price; service level = 1 − shortage ÷ demand), so their shapes track
+            together; stockout is the share of runs that ran out of stock at all.
+          </Paragraph>
+          <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
+            <Col xs={24} lg={12}>
+              <MetricHistogram
+                histogram={sim.stockout_histogram}
+                title="Stockout outcome"
+                xTitle="Run outcome →"
+                formatAxis={stockoutLabel}
+                formatRange={(start) => stockoutLabel(start)}
+              />
+            </Col>
+            <Col xs={24} lg={12}>
+              <MetricHistogram
+                histogram={sim.service_level_histogram}
+                title="Service level per run"
+                xTitle="Demand fulfilled →"
+                formatAxis={pct}
+                formatRange={(start, end) => `${pct(start)} – ${pct(end)}`}
+              />
+            </Col>
+            <Col xs={24} lg={12}>
+              <MetricHistogram
+                histogram={sim.shortage_histogram}
+                title="Expected shortage per run"
+                xTitle="Units short per run →"
+                formatAxis={units}
+                formatRange={(start, end) => `${units(start)} – ${units(end)}`}
+              />
+            </Col>
+            <Col xs={24} lg={12}>
+              <MetricHistogram
+                histogram={sim.revenue_histogram}
+                title="Revenue loss per run"
+                xTitle="Revenue loss per run (₹) →"
+                formatAxis={inrCompact}
+                formatRange={(start, end) => `${inr(start)} – ${inr(end)}`}
+                p90={p90}
+                caption={
+                  <>
+                    Bars past the{" "}
+                    <Text style={{ color: COLOR_TAIL }} strong>
+                      p90 threshold
+                    </Text>{" "}
+                    ({inr(p90)}) mark the tail-risk region.
+                  </>
+                }
+                emptyNote="No run lost revenue in this scenario — the distribution is a single point at ₹0."
+              />
+            </Col>
+          </Row>
         </div>
       )}
 

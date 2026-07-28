@@ -57,6 +57,14 @@ export interface ImpactMap {
   reasoning: string;
 }
 
+export interface CategoryForecast {
+  category: string;
+  baseline: number[];
+  adjusted: number[];
+  demand_deviation_pct: number;
+  affected: boolean;
+}
+
 export interface Forecast {
   dates: string[];
   baseline: number[];
@@ -68,6 +76,8 @@ export interface Forecast {
   note: string;
   model_name: string;
   freight_pressure_pct: number;
+  // Per-product-category breakdown (empty on legacy cached runs).
+  category_forecasts?: CategoryForecast[];
 }
 
 export interface HistogramBin {
@@ -116,8 +126,13 @@ export interface Simulation {
   deterministic_shortage_units: number;
   deterministic_service_level: number;
   deterministic_recovery_days: number;
-  // Per-iteration revenue-loss distribution (empty when no run lost revenue).
+  // Per-iteration distribution histograms (empty when a run has no spread).
+  // revenue/shortage/service_level share a shape (all driven by per-run
+  // shortage); stockout is a two-bin split of runs that stocked out vs held.
   revenue_histogram: HistogramBin[];
+  shortage_histogram?: HistogramBin[];
+  service_level_histogram?: HistogramBin[];
+  stockout_histogram?: HistogramBin[];
   // Resolved knob values this run used (null on legacy / no-impact runs).
   params?: SimParams | null;
 }
