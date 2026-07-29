@@ -123,11 +123,20 @@ def _candidate_nodes(place_hits, product_hits, region_hits, weather):
         lane["name"] for lane in net.get("lanes", [])
         if any(p in lane["name"].lower() for p in place_hits)
     } | set(hub_lanes)
+    # A geographically-anchored event (one that named a network region, place, or
+    # lane) is scoped to nodes in that geography. Matching a supplier on product
+    # line alone would wrongly implicate a same-product supplier on the far side
+    # of the world — e.g. a Delhi power outage pulling in a Los Angeles haircare
+    # supplier and its LA-Dallas lane. So for anchored events we select suppliers
+    # by geography only; the product hits still tag the affected product lines
+    # (see map_impact). An unanchored event — a pure product / raw-material shock
+    # that names no place — keeps product-based selection as its only signal.
+    geo_anchored = bool(region_hits or place_hits)
     suppliers = [
         s for s in net.get("suppliers", [])
         if str(s.get("region", "")).lower() in region_hits
-        or product_hits & {str(p).lower() for p in s.get("products", [])}
         or s.get("primary_lane") in lane_hits
+        or (not geo_anchored and product_hits & {str(p).lower() for p in s.get("products", [])})
     ]
     facilities = [
         f for f in net.get("facilities", [])
@@ -180,6 +189,13 @@ def map_impact(
 
     suppliers = [s["name"] for s in sup_rows]
     products = _dedup(str(p) for s in sup_rows for p in s.get("products", []))
+    # When the event named specific product lines, tag those rather than every
+    # product the geographically-selected suppliers happen to also make (a Delhi
+    # "haircare and fragrance" outage should tag haircare + fragrance, not the
+    # wellness line a co-located supplier also carries). Fall back to the full set
+    # if none of the named lines are carried by the selected suppliers.
+    if product_hits:
+        products = [p for p in products if p.lower() in product_hits] or products
     lanes = _dedup([s.get("primary_lane") for s in sup_rows] + list(lane_hits))
 
     # --- facilities: structured candidates, else those serving the affected lanes ---

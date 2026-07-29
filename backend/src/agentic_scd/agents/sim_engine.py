@@ -72,7 +72,12 @@ KAGGLE_DAILY_DEMAND    = 30.0   # units/day — approx (≈ 900 units/month base
 
 SIM_DAYS          = 90    # quarterly window — long enough for 16d lead + 17d transit to deliver
 SHIPMENTS_PER_RUN = 8    # 8 shipments across 90d = one every ~11d; enough for gradient
-REVENUE_PER_UNIT  = 18.0  # ₹ per unit short (from existing engine)
+# Blended revenue-at-risk per unit of unmet demand across the finished-goods
+# portfolio, in INR — NOT a single-SKU shelf price. The Monte Carlo models one
+# representative demand flow (~30 u/day); this constant scales each unmet unit to
+# the portfolio-level revenue exposure it stands in for, so the executive figures
+# land in a realistic lakhs-to-crore range for Indian beauty/personal-care.
+REVENUE_PER_UNIT  = 18000.0  # ₹ revenue exposure per unit short
 
 # Each shipment covers SIM_DAYS / SHIPMENTS_PER_RUN days of demand = ~11 days.
 # 8 shipments × 11 days = 90 days supply (before defects and delays).
