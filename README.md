@@ -101,53 +101,119 @@ accepted and mapped automatically.
 
 ## LangSmith LLM-as-judge (online)
 
-An **online LLM-as-a-judge** scores each pipeline root run in LangSmith (recommendation
-quality). Scores appear as **feedback** on the trace — the app agents themselves are unchanged.
+An **online LLM-as-a-judge** scores each pipeline root run in LangSmith for
+**recommendation quality**. A second LLM (the judge) reads the run’s inputs/outputs,
+applies a rubric, and writes **feedback** onto the trace. The supply-chain agents
+themselves are unchanged.
 
 Docs: [online LLM-as-a-judge](https://docs.langchain.com/langsmith/online-evaluations-llm-as-judge),
 [configure evaluator](https://docs.langchain.com/langsmith/llm-as-judge).
 
+```text
+App (POST /run) → LangGraph trace → project genAI
+                                      ↓
+                         Recommendation Quality Judge (gpt-3.5-turbo)
+                                      ↓
+                         feedback: recommendation_quality ∈ {1, 0.5, 0}
+```
+
 ### Prerequisites
 
-1. Tracing works to project **`genAI`** (`LANGSMITH_TRACING=true` + API key).
-2. In LangSmith **Settings**, add a secret for the **judge model** (UI default is often
-   `gpt-3.5-turbo` → OpenAI key). This is separate from the app’s `GROQ_API_KEY`.
+1. Tracing works to project **`genAI`** (`LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY`).
+2. In LangSmith **Settings**, add a secret for the **judge model** (`gpt-3.5-turbo` →
+   typically an **OpenAI** key). This is separate from the app’s `GROQ_API_KEY`.
 3. Root runs expose plain `inputs` / `outputs.recommendation` for mapping (attached by
-   `invoke_traced_pipeline` in the backend).
+   `invoke_traced_pipeline` in [`backend/src/agentic_scd/observability.py`](backend/src/agentic_scd/observability.py)).
 
-### Configure in the UI
+### How we configured it (LangSmith UI)
 
-1. Open [smith.langchain.com](https://smith.langchain.com) → Tracing → project **`genAI`**.
-2. **Evaluators** → **+ Evaluator** → **LLM-as-a-Judge**.
+1. Open [smith.langchain.com](https://smith.langchain.com) → **Evaluators** → **+ Evaluator** → **LLM-as-a-Judge**.
+2. Or from Tracing → project **`genAI`** → **Evaluators** → **+ Evaluator**.
 3. Use these settings:
 
 | Field | Value |
 |--------|--------|
 | Name | `Recommendation Quality Judge` |
 | Source | `genAI` |
+| Type | **Runs** (not Threads) |
 | Enabled | On |
-| Model | `gpt-3.5-turbo` (or a model your workspace supports) |
-| Run filter | Run name equals **`Supply Chain Disruption Pipeline`** (root only — do not score nested `RAG Search` / node spans) |
-| Sampling | `1.0` for demos; `0.1` to control cost |
+| Model | `gpt-3.5-turbo` |
+| Run filter | Prefer root traces only (`Is Trace = true` and/or run name **`Supply Chain Disruption Pipeline`**). Do **not** score nested `RAG Search` / node spans. |
+| Sampling | `100%` for demos; lower (e.g. `10%`) to control cost |
 | Feedback key | `recommendation_quality` |
-| Feedback type | Continuous **0–1** |
+| Response format | **Categorical** (LangSmith UI may not offer Continuous) |
+| Include reasoning | On |
+| Strict mode | On (for OpenAI structured output) |
 
-### Rubric to paste (Mustache)
+### Categorical feedback values
 
-Persona: You are a supply-chain operations reviewer.
+| Category | Meaning |
+|----------|---------|
+| `1` | Clear, actionable recommendation; urgency fits severity; evidence grounded |
+| `0.5` | Partially useful; vague actions or weak evidence |
+| `0` | Empty, contradictory, generic, or irrelevant |
 
-Score the **recommendation** (summary, actions, evidence) given the signal/context:
+Description used in the UI feedback config:
 
-- **1.0** — Clear, actionable plan; urgency fits severity; evidence ties to the disruption; no filler.
-- **0.5** — Partially useful; vague actions or weak evidence.
-- **0.0** — Empty, contradictory, or irrelevant to the event.
-
-Instructions: use only the mapped inputs/outputs; return the structured feedback score LangSmith requests.
+> How good is the supply-chain recommendation (actionable, urgency, evidence)?
 
 ### Variable mapping
 
-- `{{input}}` → root run **inputs** (`scenario_name`, `signal_titles`)
-- `{{output}}` → root run **outputs.recommendation** (or the full `outputs` object)
+| Prompt variable | Map to |
+|-----------------|--------|
+| `{{input}}` | Root run **input** (`scenario_name`, `signal_titles`, `run_id`, …) |
+| `{{output}}` | Root run **output** (includes `recommendation` with summary, actions, evidence) |
+
+### Judge prompt (Mustache)
+
+Paste this into the evaluator **Prompt** editor (Mustache mode). Category labels must
+match the feedback categories exactly (`1`, `0.5`, `0`):
+
+```text
+You are an expert supply-chain operations reviewer evaluating an agentic disruption-response system.
+
+Your job is to score how good the system's recommendation is for the disruption described in the input.
+
+<Input>
+{{input}}
+</Input>
+
+<Recommendation>
+{{output}}
+</Recommendation>
+
+<Rubric>
+Score recommendation_quality using exactly one of these category labels:
+
+- 1: Clear, actionable plan. Actions are concrete and prioritized. Urgency fits the disruption severity. Evidence clearly ties to the event/signal. No filler or generic advice.
+- 0.5: Partially useful. Some actions are vague, urgency is weakly justified, or evidence is thin/incomplete, but the recommendation is still directionally relevant.
+- 0: Empty, contradictory, generic, or irrelevant to the disruption in the input.
+
+Also consider:
+- Does the summary match the signal/scenario?
+- Are actions feasible for a supply-chain ops team?
+- Is evidence grounded in the disruption rather than fluff?
+</Rubric>
+
+<Instructions>
+1. Read only the Input and Recommendation above.
+2. Judge recommendation quality using the rubric.
+3. Choose exactly one category label for recommendation_quality: 1, 0.5, or 0.
+4. Briefly justify the choice in one or two sentences.
+</Instructions>
+```
+
+### Example result
+
+After a live run of scenario **Typhoon approaching Shanghai Port**, the judge returned:
+
+- **`recommendation_quality`:** `1`
+- **Reasoning:** the recommendation was concrete, prioritized, and operationally feasible
+  for a Shanghai port typhoon closure.
+
+View results under **Evaluators → Recommendation Quality Judge → Traces** (judge run),
+or on the pipeline run under **Tracing → genAI → Supply Chain Disruption Pipeline**
+(feedback panel).
 
 ### Verify
 
@@ -157,9 +223,11 @@ curl -X POST http://localhost:8000/run -H 'Content-Type: application/json' \
   -d '{"scenario_name": "Typhoon approaching Shanghai Port"}'
 ```
 
-Then open the new **Supply Chain Disruption Pipeline** trace in `genAI`. Within ~30–60s you
-should see feedback **`recommendation_quality`**. Nested spans should not get that feedback.
-If missing: Evaluators → evaluator → **Logs** (filter mismatch, missing OpenAI secret, spend limit).
+Within ~30–60s you should see feedback **`recommendation_quality`** (`1`, `0.5`, or `0`)
+plus a short comment. Nested spans should not get that feedback.
+
+If missing: Evaluators → evaluator → **Logs** (filter mismatch, missing OpenAI secret,
+or spend limit).
 
 ## Project layout
 
