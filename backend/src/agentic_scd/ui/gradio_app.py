@@ -91,9 +91,20 @@ def kpi_markdown(state: dict) -> str:
         signal_source_note = "🧪 **Scenario test mode** — results based on injected scenario, not live feeds.  \n"
     else:
         signal_source_note = "✅ **Live feed signals** — results based on data from configured RSS / weather feeds.  \n"
+    # Batch cap note: a run processes at most MAX_SIGNALS_PER_RUN signals so
+    # wall-clock stays under the client timeout. Say so rather than silently
+    # dropping the remainder — they stay queued for the next run.
+    deferred = int(state.get("signals_deferred", 0) or 0)
+    pending_total = int(state.get("signals_pending_total", 0) or 0)
+    batch_note = (
+        f"\u23f3 Processing **{len(signals)} of {pending_total}** queued signals "
+        f"this run \u2014 {deferred} deferred to the next run.  \n"
+        if deferred else ""
+    )
     return (
         f"### Executive overview\n"
         f"{signal_source_note}"
+        f"{batch_note}"
         f"**Overall risk index:** {max_severity:.1f}/10  \n"
         f"**Active disruption signals:** {active}  \n"
         f"**Stockout probability:** {stockout:.0%}  \n"
