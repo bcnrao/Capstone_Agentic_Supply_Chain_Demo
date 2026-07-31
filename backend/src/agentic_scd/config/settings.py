@@ -84,6 +84,7 @@ class Settings:
     retention_rejected_ttl_days: int = 30
     retention_signals_ttl_days: int = 90
     simulation_iterations: int = 300
+    max_signals_per_run: int = 8
     dashboard_share: bool = False
     app_name: str = "agentic-scd"
     app_version: str = "0.1.0"
@@ -124,6 +125,7 @@ def get_settings() -> Settings:
         retention_rejected_ttl_days=env_int("RETENTION_REJECTED_TTL_DAYS", 30),
         retention_signals_ttl_days=env_int("RETENTION_SIGNALS_TTL_DAYS", 90),
         simulation_iterations=env_int("SIMULATION_ITERATIONS", 300),
+        max_signals_per_run=env_int("MAX_SIGNALS_PER_RUN", 8),
         dashboard_share=env_flag("GRADIO_SHARE", default=False),
         app_name=os.getenv("APP_NAME", "agentic-scd"),
         app_version=os.getenv("APP_VERSION", "0.1.0"),
