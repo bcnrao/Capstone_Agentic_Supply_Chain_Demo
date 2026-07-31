@@ -136,16 +136,39 @@ export function buildMapData(
 ): { nodes: MapNode[]; arcs: MapArc[]; regions: MapRegion[] } {
   const nodeMap = new Map<string, MapNode>();
   const arcs: MapArc[] = [];
-  const maxClassification =
-    state?.classifications?.reduce((acc, item) => Math.max(acc, item.severity), 0) ?? 0;
-  const defaultSeverity = state ? Math.max(maxClassification, 2) : 1;
 
-  const impactedLanes = new Set<string>();
-  const impactedEntities = new Set<string>();
+  // Per-node severity, not one number for the whole run.
+  //
+  // Previously every impacted node, lane and region was painted with a single
+  // scalar (the max severity across all classifications), so the map showed the
+  // same colour on every port regardless of what was actually hit. Here each
+  // impact carries the severity of the classification that produced it, and an
+  // entity keeps the worst severity of the impacts that touched it.
+  const severityBySignal = new Map<string, number>(
+    (state?.classifications ?? []).map((item) => [item.signal_id, item.severity]),
+  );
 
-  // Countries the run actually flagged as impacted, keyed by country name and
-  // holding the highest severity seen. Only genuinely-impacted places are added
-  // (severity >= 2), so unaffected countries stay in the muted base fill.
+  const laneSeverity = new Map<string, number>();
+  const entitySeverity = new Map<string, number>();
+  const bump = (map: Map<string, number>, key: string, value: number) => {
+    map.set(key, Math.max(map.get(key) ?? 0, value));
+  };
+
+  for (const impact of state?.impacts ?? []) {
+    // Fall back to 2 (the "on the map but not alarming" floor) when an impact
+    // has no matching classification, rather than to the run-wide maximum.
+    const severity = severityBySignal.get(impact.signal_id) ?? 2;
+    for (const lane of impact.affected_lanes ?? []) bump(laneSeverity, lane, severity);
+    for (const supplier of impact.affected_suppliers ?? []) bump(entitySeverity, supplier, severity);
+    for (const facility of impact.affected_facilities ?? []) bump(entitySeverity, facility, severity);
+  }
+
+  // Unimpacted network nodes still render, but muted — they are context, not risk.
+  const BASELINE = 1.5;
+
+  // Countries the run flagged as impacted, keyed by country name and holding the
+  // highest severity seen. Only genuinely-impacted places are added (severity
+  // >= 2), so unaffected countries stay in the muted base fill.
   const regionMap = new Map<string, MapRegion>();
   const addRegion = (country: string | null, severity: number) => {
     if (!country || severity < 2) return;
@@ -153,21 +176,18 @@ export function buildMapData(
     regionMap.set(country, { country, severity: next, level: severityLevel(next) });
   };
 
-  for (const impact of state?.impacts ?? []) {
-    for (const lane of impact.affected_lanes) impactedLanes.add(lane);
-    for (const supplier of impact.affected_suppliers) impactedEntities.add(supplier);
-    for (const facility of impact.affected_facilities) impactedEntities.add(facility);
+  // Shade both endpoint countries of every impacted lane, each at that lane's own
+  // severity. We walk the impacts' lane names (not just network topology) so a
+  // flagged lane absent from the seed network still lights its regions.
+  for (const [laneName, severity] of laneSeverity) {
+    const [fromLabel, toLabel] = parseLaneEndpoints(laneName);
+    addRegion(countryForPlace(fromLabel), severity);
+    addRegion(countryForPlace(toLabel), severity);
   }
 
-  // Shade both endpoint countries of every impacted lane. We walk the impact's
-  // own lane names (not just network topology) so a flagged lane that isn't in
-  // the seed network — e.g. a hub lane the impact agent added — still lights its
-  // regions.
-  for (const laneName of impactedLanes) {
-    const [fromLabel, toLabel] = parseLaneEndpoints(laneName);
-    addRegion(countryForPlace(fromLabel), defaultSeverity);
-    addRegion(countryForPlace(toLabel), defaultSeverity);
-  }
+  // Ports that already have a weather marker, so the lane loop below does not
+  // stack a second "hub" dot on the same coordinates with a different severity.
+  const weatherLabels = new Set<string>();
 
   for (const risk of state?.weather_risks ?? []) {
     const coords = resolveCoordinates(
@@ -177,10 +197,13 @@ export function buildMapData(
       risk.lon,
     );
     if (!coords) continue;
+    const label = risk.hub_port ?? risk.region ?? "Weather hub";
+    weatherLabels.add(label);
+    if (risk.region) weatherLabels.add(risk.region);
     upsertNode(
       nodeMap,
       `weather-${risk.signal_id}-${risk.hub_port ?? risk.region}`,
-      risk.hub_port ?? risk.region ?? "Weather hub",
+      label,
       coords,
       risk.aggregate_severity,
       "weather",
@@ -189,7 +212,7 @@ export function buildMapData(
   }
 
   for (const supplier of network?.suppliers ?? []) {
-    const impacted = impactedEntities.has(supplier.name);
+    const severity = entitySeverity.get(supplier.name);
     const coords = resolveCoordinates(supplier.name, supplier.region);
     if (!coords) continue;
     upsertNode(
@@ -197,14 +220,14 @@ export function buildMapData(
       `supplier-${supplier.name}`,
       supplier.name,
       coords,
-      impacted ? defaultSeverity : 1.5,
+      severity ?? BASELINE,
       "supplier",
     );
-    if (impacted) addRegion(countryForPlace(supplier.name, supplier.region), defaultSeverity);
+    if (severity) addRegion(countryForPlace(supplier.name, supplier.region), severity);
   }
 
   for (const facility of network?.facilities ?? []) {
-    const impacted = impactedEntities.has(facility.name);
+    const severity = entitySeverity.get(facility.name);
     const coords = resolveCoordinates(facility.name, facility.region);
     if (!coords) continue;
     upsertNode(
@@ -212,10 +235,10 @@ export function buildMapData(
       `facility-${facility.name}`,
       facility.name,
       coords,
-      impacted ? defaultSeverity : 1.5,
+      severity ?? BASELINE,
       "facility",
     );
-    if (impacted) addRegion(countryForPlace(facility.name, facility.region), defaultSeverity);
+    if (severity) addRegion(countryForPlace(facility.name, facility.region), severity);
   }
 
   const lanes = network?.lanes ?? [];
@@ -231,26 +254,30 @@ export function buildMapData(
       resolveCoordinates(toLabel, toLabel);
     if (!from || !to) continue;
 
-    const impacted = impactedLanes.has(lane.name) || state?.impacts?.length;
+    // Only lanes the impact agent actually flagged are drawn hot. The previous
+    // test was `impactedLanes.has(name) || state?.impacts?.length`, and that
+    // second operand is a NUMBER — truthy whenever the run produced any impact
+    // at all — so every lane in the network lit up on every run.
+    const severity = laneSeverity.get(lane.name);
     arcs.push({
       id: lane.name,
       from,
       to,
-      severity: impacted ? defaultSeverity : 1,
+      severity: severity ?? 1,
       label: lane.name,
     });
 
-    if (!nodeMap.has(`hub-${fromLabel}`)) {
-      upsertNode(nodeMap, `hub-${fromLabel}`, fromLabel, from, impacted ? defaultSeverity : 1, "hub");
+    if (!nodeMap.has(`hub-${fromLabel}`) && !weatherLabels.has(fromLabel)) {
+      upsertNode(nodeMap, `hub-${fromLabel}`, fromLabel, from, severity ?? 1, "hub");
     }
-    if (!nodeMap.has(`hub-${toLabel}`)) {
-      upsertNode(nodeMap, `hub-${toLabel}`, toLabel, to, impacted ? defaultSeverity : 1, "hub");
+    if (!nodeMap.has(`hub-${toLabel}`) && !weatherLabels.has(toLabel)) {
+      upsertNode(nodeMap, `hub-${toLabel}`, toLabel, to, severity ?? 1, "hub");
     }
   }
 
   if (nodeMap.size === 0) {
     for (const [hub, coords] of Object.entries(HUB_CENTROIDS)) {
-      upsertNode(nodeMap, `fallback-${hub}`, hub, coords, 1.5, "hub");
+      upsertNode(nodeMap, `fallback-${hub}`, hub, coords, BASELINE, "hub");
     }
   }
 
