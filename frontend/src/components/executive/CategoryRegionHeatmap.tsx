@@ -1,5 +1,6 @@
 import { Card, Empty, Tooltip } from "antd";
 
+import { useNetwork } from "../../api/hooks";
 import type { PipelineState } from "../../types/state";
 import {
   buildHeatmap,
@@ -13,7 +14,8 @@ interface Props {
 }
 
 export default function CategoryRegionHeatmap({ state }: Props) {
-  const { categories, regions, cells } = buildHeatmap(state);
+  const { data: network } = useNetwork();
+  const { categories, regions, cells } = buildHeatmap(state, network);
   const hasData = categories.length > 0 && regions.length > 0;
 
   return (
