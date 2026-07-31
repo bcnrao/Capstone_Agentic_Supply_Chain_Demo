@@ -1,4 +1,4 @@
-import type { PipelineState } from "../types/state";
+import type { ImpactMap, PipelineState, SupplyNetwork } from "../types/state";
 import { severityLevel, type RiskLevel } from "./mapData";
 
 // One filled square in the executive heatmap: the worst severity seen for a
@@ -60,7 +60,10 @@ const UNASSIGNED = "Unassigned";
 // Derive a Product-Category × Region severity grid from a completed pipeline run.
 // Product categories come from `impacts`; region and severity are joined back to
 // each impact's originating signal_id via the other stages of the same state.
-export function buildHeatmap(state: PipelineState | undefined): HeatmapData {
+export function buildHeatmap(
+  state: PipelineState | undefined,
+  network?: SupplyNetwork,
+): HeatmapData {
   const empty: HeatmapData = {
     categories: [],
     regions: [],
@@ -69,14 +72,27 @@ export function buildHeatmap(state: PipelineState | undefined): HeatmapData {
   };
   if (!state) return empty;
 
-  // signal_id -> region, preferring the classifier's extracted region.
-  const regionOf = new Map<string, string>();
-  for (const ea of state.event_analyses ?? []) {
-    if (ea.extracted_region) regionOf.set(ea.signal_id, ea.extracted_region);
+  // Network entity name -> its region, so an impact can name its own region
+  // even when the originating headline carried no place. This is also the more
+  // meaningful reading of the panel: the axis is "which of OUR regions is at
+  // risk", not "where was the story filed".
+  const regionOfEntity = new Map<string, string>();
+  for (const entity of [...(network?.suppliers ?? []), ...(network?.facilities ?? [])]) {
+    if (entity.region) regionOfEntity.set(entity.name, entity.region);
   }
+
+  // signal_id -> region. The signal's own location wins: it comes from the
+  // connector or from normalize.infer_region(), both of which emit the same
+  // city-level vocabulary as the network KB. The LLM's extracted_region is free
+  // text and often country-level ("India"), which would open a duplicate column
+  // beside the city ones — so it is only a fallback.
+  const regionOf = new Map<string, string>();
   for (const signal of state.new_signals ?? []) {
-    if (!regionOf.has(signal.signal_id) && signal.location?.region) {
-      regionOf.set(signal.signal_id, signal.location.region);
+    if (signal.location?.region) regionOf.set(signal.signal_id, signal.location.region);
+  }
+  for (const ea of state.event_analyses ?? []) {
+    if (!regionOf.has(ea.signal_id) && ea.extracted_region) {
+      regionOf.set(ea.signal_id, ea.extracted_region);
     }
   }
   for (const risk of state.weather_risks ?? []) {
@@ -101,8 +117,25 @@ export function buildHeatmap(state: PipelineState | undefined): HeatmapData {
   const cells: Record<string, HeatCell> = {};
   let maxSeverity = 0;
 
+  // Region of the network entities this impact actually touched. Used when the
+  // signal itself has no place attached.
+  const regionFromImpact = (impact: ImpactMap): string | undefined => {
+    for (const name of [...(impact.affected_suppliers ?? []), ...(impact.affected_facilities ?? [])]) {
+      const region = regionOfEntity.get(name);
+      if (region) return region;
+    }
+    for (const lane of impact.affected_lanes ?? []) {
+      for (const part of lane.split("-")) {
+        const region = regionOfEntity.get(part.trim());
+        if (region) return region;
+        if ([...regionOfEntity.values()].includes(part.trim())) return part.trim();
+      }
+    }
+    return undefined;
+  };
+
   for (const impact of state.impacts ?? []) {
-    const region = regionOf.get(impact.signal_id) ?? UNASSIGNED;
+    const region = regionOf.get(impact.signal_id) ?? regionFromImpact(impact) ?? UNASSIGNED;
     const severity = severityOf.get(impact.signal_id) ?? 0;
     for (const raw of impact.product_categories ?? []) {
       const category = raw.trim();
